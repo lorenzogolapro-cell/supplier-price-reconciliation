@@ -1,26 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-Retrouve un produit par son libelle quand sa reference ne suffit pas.
+Finds a product by its label when its reference is not enough.
 
-La reference fournisseur fait foi, mais elle n'est pas toujours juste
-dans le WMS : chez le Fournisseur S, les fauteuils de la GAMME EXEMPLE 1
-portent une reference qui ne
-suit pas celle du fabricant, alors que leur libelle, lui, est fiable. Le
-libelle sert donc a deux choses :
+The supplier reference is authoritative, but it is not always right in the
+WMS: at Supplier S, the chairs of the GAMME EXEMPLE 1 range carry a
+reference that does not follow the manufacturer's, while their label is
+reliable. So the label serves two purposes:
 
-  - RATTRAPER  quand aucune reference ne correspond, chercher le produit
-               par son nom, a fournisseur egal ;
-  - TRANCHER   quand une reference correspond mais que les deux libelles
-               n'ont rien de commun, s'en mefier.
+  - RECOVER   when no reference matches, look the product up by its name,
+              within the same supplier;
+  - CHALLENGE when a reference does match but the two labels have nothing
+              in common, treat it with suspicion.
 
-La methode est celle qui a fait ses preuves sur VIDAL : on compte la part
-de NOS mots retrouvee chez le fournisseur — et non la ressemblance
-mutuelle, car les catalogues decrivent plus longuement que nos libelles —
-et on exige que les nombres concordent. Ce dernier point est le garde-fou
-essentiel : sans lui, une taille L recevrait le code d'une taille S.
+The method is the one proven on VIDAL: we measure the share of OUR words
+found at the supplier's end, not mutual resemblance, because catalogues
+describe things at greater length than our labels do, and we require the
+numbers to agree. That last point is the essential guard rail: without it,
+a size L would be given the code of a size S.
 
-Un code obtenu ainsi est marque "libellé" : c'est une piste solide, pas
-une certitude, et il ne doit pas partir dans le WMS sans relecture.
+A code obtained this way is marked "libellé": it is a solid lead, not a
+certainty, and it must not go into the WMS without review.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ import unicodedata
 
 import pandas as pd
 
-# Vocabulaire trop courant pour distinguer deux produits
+# Vocabulary too common to tell two products apart
 MOTS_VIDES = {
     "DE", "DU", "LA", "LE", "LES", "ET", "AVEC", "SANS", "POUR", "PAR",
     "EN", "UN", "UNE", "DES", "SUR", "AU", "AUX",
@@ -39,41 +38,41 @@ MOTS_VIDES = {
     "LOT", "PAIRE", "TAILLE", "POINTURE", "COLORIS", "REF", "MODELE",
 }
 
-# Longueur de racine : absorbe les pluriels et nos libelles tronques
+# Stem length: absorbs plurals and our own truncated labels
 RACINE = 5
 
-# Part de nos mots qui doit se retrouver chez le fournisseur
+# Share of our words that must be found at the supplier's end
 SEUIL = 0.6
 
-# Tous les nombres, meme colles a des lettres : "T39", "CH12", "0,8cm"
+# Every number, even glued to letters: "T39", "CH12", "0,8cm"
 NOMBRE = re.compile(r"\d+(?:[.,]\d+)?")
 
-# Mots qui distinguent deux produits d'une meme gamme. Presents d'un seul
-# cote, ils disqualifient le rapprochement — c'est exactement ce qui
-# manquait quand "MODELE EXEMPLE 1 LIGHT" a recu le code de
-# "MODELE EXEMPLE 1 EXTRA Light", et que vingt fauteuils de la GAMME
-# EXEMPLE 1 ont herite du code d'un modele bariatrique.
+# Words that tell apart two products of the same range. Present on one side
+# only, they disqualify the match - which is exactly what was missing when
+# "MODELE EXEMPLE 1 LIGHT" was given the code of "MODELE EXEMPLE 1 EXTRA
+# Light", and when twenty chairs of the GAMME EXEMPLE 1 range inherited the
+# code of a bariatric model.
 DISCRIMINANTS = {
-    # intensite / gamme
+    # intensity / range
     "EXTRA", "SUPER", "ULTRA", "MAXI", "MINI", "PLUS", "PREMIUM", "LIGHT",
     "NORMAL", "STANDARD", "CONFORT", "BASIC", "PRO", "EVO", "BARIATRIQUE",
-    # morphologie
+    # morphology
     "XXL", "XXS", "JUNIOR", "ENFANT", "ADULTE", "PEDIATRIQUE", "BEBE",
     "COURT", "LONG", "LARGE", "ETROIT", "HAUT", "BAS",
-    # tailles d'une ou deux lettres : trop courtes pour etre retenues
-    # comme mots, mais ce sont elles qui separent le S du L
+    # one- or two-letter sizes: too short to be kept as words, yet they are
+    # what separates the S from the L
     "S", "M", "L", "XL", "XS", "TS", "TM", "TL", "TXL", "TU",
-    # laterite et forme
+    # side and shape
     "GAUCHE", "DROITE", "DROIT", "PLIANT", "FIXE", "ELECTRIQUE", "MANUEL",
-    # couleurs : deux coloris sont deux articles
+    # colours: two shades are two articles
     "NOIR", "NOIRE", "BLANC", "BLANCHE", "BLEU", "BLEUE", "ROUGE", "VERT",
     "VERTE", "GRIS", "GRISE", "BEIGE", "TAUPE", "MARRON", "ROSE", "JAUNE",
     "ORANGE", "VIOLET", "ANTHRACITE", "CHOCO", "GREGE", "CHINE", "SAPHIR",
 }
 
-# Quantite par conditionnement : "SACHET DE 24", "BTE/30", "LOT DE 5",
-# "x 12". Deux conditionnements differents sont deux articles — c'est le
-# cas du sachet de 24 recu par le sachet de 14.
+# Quantity per pack: "SACHET DE 24", "BTE/30", "LOT DE 5", "x 12". Two
+# different packs are two articles - as in the pack of 24 that was given
+# the code of the pack of 14.
 QUANTITE = re.compile(
     r"(?:SACHET|BOITE|BTE|LOT|PAQUET|PACK|CARTON|BLISTER|SET|POCHE)"
     r"[\s/]*(?:DE\s*)?(\d{1,4})\b|"
@@ -89,24 +88,24 @@ def _normaliser(texte) -> str:
     sans_accent = unicodedata.normalize("NFKD", str(texte).upper())
     sans_accent = "".join(c for c in sans_accent
                           if not unicodedata.combining(c))
-    # L'apostrophe d'une contraction ne separe pas deux mots : « MODEL'S »
-    # vaut UN mot, pas « MODEL » + « S ». La retirer AVANT de remplacer le
-    # reste par des espaces evite de fabriquer un « S » parasite — qui est
-    # aussi l'abreviation de la taille Small dans DISCRIMINANTS. Sans ce
-    # retrait, deux produits « MODEL'S ... » PARTAGENT TOUJOURS ce « S », et
-    # le controle de discriminants (couleur, cote) ne voit plus leurs vrais
-    # desaccords : « MODEL'S GO NOIR » passait comme compatible avec
-    # « Model's Go Beige », decouvert le 17/09 sur le lot du Fournisseur AN.
+    # The apostrophe of a contraction does not separate two words: "MODEL'S"
+    # counts as ONE word, not "MODEL" + "S". Removing it BEFORE replacing
+    # the rest with spaces avoids manufacturing a spurious "S", which also
+    # happens to be the abbreviation for size Small in DISCRIMINANTS.
+    # Without this removal, two "MODEL'S ..." products ALWAYS SHARE that
+    # "S", and the discriminant check (colour, side) no longer sees their
+    # real disagreements: "MODEL'S GO NOIR" was passing as compatible with
+    # "Model's Go Beige", found on 17/09 in the Supplier AN batch.
     sans_apostrophe = re.sub(r"['’]", "", sans_accent)
     return re.sub(r"[^A-Z0-9]+", " ", sans_apostrophe)
 
 
 def mots(texte, marque: str | None = None) -> set:
-    """Mots significatifs d'un libelle, marque et vocabulaire courant otes.
+    """Meaningful words of a label, brand and common vocabulary removed.
 
-    Nos libelles commencent par la marque ("FOURNISSEUR S GAMME EXEMPLE 1...") que le
-    catalogue du fabricant ne repete pas : la compter fausserait le score
-    dans les deux sens.
+    Our labels start with the brand ("FOURNISSEUR S GAMME EXEMPLE 1...")
+    which the manufacturer's catalogue does not repeat: counting it would
+    skew the score in both directions.
     """
     normalise = _normaliser(texte)
     prefixe = _normaliser(marque)
@@ -122,10 +121,10 @@ def mots(texte, marque: str | None = None) -> set:
 
 
 def nombres(texte) -> set:
-    """Nombres du libelle : tailles, calibres, dimensions.
+    """Numbers in the label: sizes, calibres, dimensions.
 
-    Deux produits dont les nombres different ne sont pas le meme, quelle
-    que soit la ressemblance des mots.
+    Two products whose numbers differ are not the same one, however much
+    their words resemble each other.
     """
     valeurs = set()
     for brut in NOMBRE.findall(str(texte or "")):
@@ -135,7 +134,7 @@ def nombres(texte) -> set:
 
 
 def discriminants(texte, marque: str | None = None) -> set:
-    """Mots qui distinguent deux produits d'une meme gamme."""
+    """Words that tell apart two products of the same range."""
     normalise = _normaliser(texte)
     prefixe = _normaliser(marque)
     if prefixe and normalise.startswith(prefixe):
@@ -144,7 +143,7 @@ def discriminants(texte, marque: str | None = None) -> set:
 
 
 def quantite(texte) -> set:
-    """Quantites par conditionnement citees dans le libelle."""
+    """Pack quantities quoted in the label."""
     valeurs = set()
     for groupes in QUANTITE.findall(str(texte or "")):
         for valeur in groupes:
@@ -155,7 +154,7 @@ def quantite(texte) -> set:
 
 def indexer(catalogue: pd.DataFrame, colonne_fournisseur: str = "fournisseur",
             colonne_libelle: str = "designation") -> dict:
-    """Prepare le catalogue pour la recherche : un index par fournisseur."""
+    """Prepares the catalogue for lookup: one index per supplier."""
     index: dict[str, list] = {}
     for ligne in catalogue.itertuples():
         fournisseur = getattr(ligne, colonne_fournisseur, None)
@@ -177,7 +176,7 @@ def indexer(catalogue: pd.DataFrame, colonne_fournisseur: str = "fournisseur",
 
 def chercher(libelle: str, candidats: list[dict], marque: str | None = None,
              seuil: float = SEUIL) -> dict | None:
-    """Meilleur produit du catalogue pour un de nos libelles."""
+    """Best catalogue product for one of our labels."""
     nos_mots = mots(libelle, marque)
     nos_nombres = nombres(libelle)
     nos_discriminants = discriminants(libelle, marque)
@@ -189,20 +188,20 @@ def chercher(libelle: str, candidats: list[dict], marque: str | None = None,
     for candidat in candidats:
         if not candidat["mots"]:
             continue
-        # Les nombres priment : ils distinguent les declinaisons
+        # Numbers come first: they tell the variants apart
         if nos_nombres and candidat["nombres"] and not (
             nos_nombres & candidat["nombres"]
         ):
             continue
 
-        # Un mot discriminant present d'un seul cote separe deux produits
-        # d'une meme gamme : "Extra Light" n'est pas "Light", un modele
-        # bariatrique n'est pas le modele courant.
+        # A discriminant word present on one side only separates two
+        # products of the same range: "Extra Light" is not "Light", and a
+        # bariatric model is not the standard one.
         if nos_discriminants ^ candidat["discriminants"]:
             continue
 
-        # Deux conditionnements differents sont deux articles : le sachet
-        # de 24 ne porte pas le code du sachet de 14.
+        # Two different packs are two articles: the pack of 24 does not
+        # carry the code of the pack of 14.
         if notre_quantite and candidat["quantite"] and not (
             notre_quantite & candidat["quantite"]
         ):
@@ -227,11 +226,11 @@ def enrichir(df: pd.DataFrame, catalogue: pd.DataFrame,
              colonne_fournisseur: str = "nom_fournisseur_wms",
              colonne_libelle: str = "designation_wms",
              correspondance=None) -> pd.DataFrame:
-    """Complete les EAN manquants par rapprochement de libelle.
+    """Fills in missing EANs by label matching.
 
-    `correspondance` ramene le nom du fournisseur tel que le WMS le porte a
-    celui sous lequel le catalogue publie ses lignes (le WMS dit
-    "EXEMPLE' S.A.", le tarif dit "EXEMPLE SA").
+    `correspondance` maps the supplier name as the WMS carries it to the
+    name the catalogue publishes its lines under (the WMS says
+    "EXEMPLE' S.A.", the price list says "EXEMPLE SA").
     """
     df = df.copy()
     if "source_ean" not in df.columns:
@@ -260,29 +259,29 @@ def enrichir(df: pd.DataFrame, catalogue: pd.DataFrame,
         df.at[position, "ean"] = resultat["ean"]
         df.at[position, "source_ean"] = "libellé"
         df.at[position, "libelle_fournisseur"] = resultat["libelle"]
-        # Le score dit quelle part de notre libelle s'est retrouvee chez
-        # le fournisseur : au-dessus de 0,8 le produit est presque
-        # toujours le bon, en dessous il faut regarder.
+        # The score says how much of our label was found at the supplier's
+        # end: above 0.8 the product is almost always the right one, below
+        # that it needs a look.
         df.at[position, "concordance_libelle"] = resultat["score"]
         trouves += 1
 
-    print(f"  EAN retrouvés par le libellé : {trouves} (à vérifier)")
+    print(f"  EANs recovered from the label: {trouves} (to be checked)")
     return purger_doublons(df)
 
 
 def purger_doublons(df: pd.DataFrame, sources: tuple = ("libellé",)
                     ) -> pd.DataFrame:
-    """Retire les codes deduits attribues a PLUSIEURS de nos articles.
+    """Removes inferred codes assigned to SEVERAL of our articles.
 
-    Un code EAN designe un produit et un seul. Quand un rapprochement
-    par libelle donne le meme code a vingt fauteuils qui ne different que
-    par la couleur et la largeur d'assise, dix-neuf sont faux — et rien
-    ne dit lequel est le bon. On les retire tous : un manque se comble,
-    un code faux fait scanner un produit pour un autre.
+    An EAN code designates one product and one only. When a label match
+    gives the same code to twenty chairs that differ only in colour and
+    seat width, nineteen are wrong - and nothing says which one is right.
+    We remove them all: a gap can be filled later, whereas a wrong code
+    makes people scan one product for another.
 
-    Les codes issus d'un tarif ou d'une reference ne sont pas concernes :
-    un fournisseur peut legitimement publier le meme code sur deux lignes
-    de son catalogue.
+    Codes coming from a price list or a reference are not concerned: a
+    supplier may legitimately publish the same code on two lines of its
+    catalogue.
     """
     deduits = df["source_ean"].isin(sources) & df["ean"].notna()
     if not deduits.any():
@@ -297,6 +296,6 @@ def purger_doublons(df: pd.DataFrame, sources: tuple = ("libellé",)
     retires = int(a_purger.sum())
     df.loc[a_purger, ["ean", "source_ean", "libelle_fournisseur",
                       "concordance_libelle"]] = None
-    print(f"  {retires} retirés : {len(partages)} codes attribués à "
-          f"plusieurs articles (rapprochement trop large)")
+    print(f"  {retires} removed: {len(partages)} codes assigned to "
+          f"several articles (match too loose)")
     return df

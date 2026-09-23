@@ -1,170 +1,171 @@
-# Pipeline de réconciliation de tarifs fournisseurs
+# Supplier price list reconciliation pipeline
 
-Pipeline Python qui reconstitue, à partir de tarifs fournisseurs hétérogènes, le code
-EAN et le prix d'achat de chaque référence d'un distributeur de dispositifs médicaux,
-puis les rapproche de son système de gestion d'entrepôt.
+A Python pipeline that reconstructs the EAN barcode and the purchase price of every
+product reference held by a medical device distributor, starting from heterogeneous
+supplier price lists, and matches them against the distributor's warehouse
+management system.
 
 ---
 
-> ### Avertissement
+> ### Please read first
 >
-> **Extrait représentatif d'un système plus large.** Ce dépôt ne s'exécute pas en
-> l'état : il ne contient aucune donnée confidentielle et certains modules
-> internes ont été volontairement exclus. Le code est fourni pour lecture, pour
-> illustrer la démarche et l'architecture. Tous les noms (client, fournisseurs,
-> personnes) et tous les chiffres commerciaux sont anonymisés ou remplacés par des
-> exemples.
+> **This is a representative extract of a larger system.** The repository does not
+> run as is: it contains no confidential data, and some internal modules were
+> deliberately left out. The code is published to be read, to show the approach and
+> the architecture. Every name (client, suppliers, people) and every commercial
+> figure has been anonymised or replaced with an example value.
 
 ---
 
-## Le problème
+## The problem
 
-Un distributeur reçoit chaque année les tarifs de près d'une centaine de
-fournisseurs, dans autant de formats : classeurs Excel aux colonnes toutes
-différentes, PDF natifs, PDF scannés, documents de conditions commerciales qui ne
-sont pas des tarifs. En face, son référentiel produit interne connaît mal les codes
-EAN et porte des prix d'achat périmés. Rapprocher les deux à la main est hors
-d'atteinte à cette échelle, et le faire naïvement est pire que de ne rien faire :
-une erreur de lecture ne produit pas un plantage, elle produit un prix faux que
-personne ne voit passer.
+A distributor receives price lists from close to a hundred suppliers every year, in
+as many formats: Excel workbooks whose columns never line up, native PDFs, scanned
+PDFs, and commercial terms documents that are not price lists at all. On the other
+side, its internal product reference system has patchy barcode coverage and carries
+outdated purchase prices. Reconciling the two by hand is out of reach at this scale,
+and doing it naively is worse than not doing it: a misread value does not crash
+anything, it produces a wrong price that nobody notices.
 
 ## Architecture
 
-Le pipeline se lit en cinq temps. Les noms ci-dessous sont ceux des fichiers de ce
-dépôt.
+The pipeline reads in five stages. The names below are the actual files in this
+repository.
 
-**1. Extraction.** Un module par fournisseur, tous tenus au même contrat :
-`extract(path) -> DataFrame` respectant le schéma commun.
+**1. Extraction.** One module per supplier, all bound by the same contract:
+`extract(path) -> DataFrame` conforming to the shared schema.
 
-- `extracteurs/base.py` : le socle. Schéma de sortie, validation de la clé de
-  contrôle EAN (mod 10, norme GS1), contrôle de cohérence entre prix affiché et prix
-  recalculé, logique des paliers dégressifs. C'est le fichier par lequel entrer.
-- `extracteurs/generique.py` : extracteur de repli, qui détecte les colonnes par
-  leur intitulé plutôt que par leur position.
-- `extracteurs/pdf_base.py`, `extracteurs/paliers_lignes.py` : socles spécialisés.
-- `extracteurs/fournisseur_a.py`, `fournisseur_b_conditions.py`, `fournisseur_c.py` :
-  trois exemples conservés sur la soixantaine existante. Le deuxième est le plus
-  instructif : il lit des remises composées, où c'est le format de la cellule et non
-  sa valeur qui distingue un prix d'un taux.
+- `extracteurs/base.py`: the foundation. Output schema, EAN check digit validation
+  (mod 10, GS1 standard), coherence check between the displayed price and the
+  recalculated one, tiered pricing logic. This is the file to start with.
+- `extracteurs/generique.py`: fallback extractor, which locates columns by their
+  header text rather than by position.
+- `extracteurs/pdf_base.py`, `extracteurs/paliers_lignes.py`: specialised
+  foundations.
+- `extracteurs/fournisseur_a.py`, `fournisseur_b_conditions.py`, `fournisseur_c.py`:
+  three examples kept out of the sixty or so that exist. The second is the most
+  instructive: it reads compound discounts, where the cell *format* rather than its
+  value is what separates a price from a rate.
 
-**2. Périmètre.** Le champ de travail est figé une fois, puis lu, jamais recalculé.
+**2. Scope.** The working population is frozen once, then read, never recomputed.
 
-- `perimetre_config.py` : les règles d'entrée, écrites comme des décisions métier
-  assumées et non comme des paramètres à optimiser.
-- `figer_perimetre.py` : produit la liste figée et son manifeste (empreintes des
-  sources).
-- `perimetre_liste.py` : la lit, et refuse de continuer si le compte ne tombe pas.
-- `perimetre.py`, `normalisation.py` : annotation et normalisation des références.
+- `perimetre_config.py`: the inclusion rules, written as settled business decisions
+  rather than as parameters to be tuned.
+- `figer_perimetre.py`: produces the frozen list and its manifest (source
+  fingerprints).
+- `perimetre_liste.py`: reads it, and refuses to continue if the count does not
+  match.
+- `perimetre.py`, `normalisation.py`: annotation and reference normalisation.
 
-**3. Rapprochement en cascade.** Plusieurs clés testées par fiabilité décroissante,
-la clé retenue étant toujours tracée en colonne.
+**3. Matching cascade.** Several keys tried in decreasing order of reliability, with
+the key that succeeded always recorded in its own column.
 
-- `pa_completer.py` : le cœur. Quatre clés automatiques, garde-fou anti-aberration.
-- `pa_identifiants.py` : cinquième passe, sur les identifiants abîmés.
-- `pa_correspondances.py` : sixième et dernière, une table de décisions humaines qui
-  ne comble que les cases vides.
-- `pa_libelle.py` et `par_libelle.py` : rapprochement approximatif par libellé, à
-  seuil calibré, en lecture seule.
-- `pa_par_modele.py` : rapprochement par nom de modèle, quand ni la référence ni le
-  libellé ne suffisent.
-- `pa_conditionnement.py` : ramène un prix au lot vers un prix unitaire, jamais sans
+- `pa_completer.py`: the core. Four automatic keys, plus an anti-aberration guard.
+- `pa_identifiants.py`: fifth pass, for damaged identifiers.
+- `pa_correspondances.py`: sixth and last, a table of human decisions that only ever
+  fills empty cells.
+- `pa_libelle.py` and `par_libelle.py`: fuzzy matching on product labels, with a
+  calibrated threshold, read only.
+- `pa_par_modele.py`: matching on model name, when neither reference nor label is
+  enough.
+- `pa_conditionnement.py`: converts a pack price into a unit price, never without
   corroboration.
 
-**4. Contrôle et restitution.**
+**4. Control and reporting.**
 
-- `qualite.py` : construction et hiérarchisation des anomalies.
-- `pa_reconcilier_responsable.py` : confronte notre lecture à celle d'un second
-  pipeline, indépendant, qui lit les mêmes tarifs.
-- `ean_controle.py` : quatre niveaux de contrôle sur les codes retenus, en lecture
-  seule.
-- `controle_calculs.py` : déroule la chaîne de calcul ligne à ligne, sans rien écrire.
-- `pa_fusionner.py`, `pa_etat_par_article.py`, `pa_ecartes.py`, `pa_a_arbitrer.py` :
-  fusion non destructive et vues de relecture.
-- `mise_en_forme.py` : mise en forme des classeurs, et écriture qui ne casse pas un
-  traitement long quand le fichier cible est ouvert ailleurs.
+- `qualite.py`: builds and ranks anomalies.
+- `pa_reconcilier_responsable.py`: compares our reading against a second,
+  independent pipeline that reads the same price lists.
+- `ean_controle.py`: four levels of control over the retained barcodes, read only.
+- `controle_calculs.py`: walks the pricing chain line by line, writing nothing.
+- `pa_fusionner.py`, `pa_etat_par_article.py`, `pa_ecartes.py`, `pa_a_arbitrer.py`:
+  non destructive merge and human review views.
+- `mise_en_forme.py`: workbook formatting, and a write path that does not break a
+  long running job when the target file is open elsewhere.
 
-**5. Chaîne EAN et sources externes.**
+**5. Barcode chain and external sources.**
 
-- `decoder_gs1.py` : décodage GS1-128 et DataMatrix, avec distinction entre unité de
-  vente et carton.
-- `ean_global.py` : consolidation multi-sources, avec ordre de priorité explicite.
-- `ean_version.py` : gel d'une version numérotée, arbitrage des codes ambigus.
+- `decoder_gs1.py`: GS1-128 and DataMatrix decoding, distinguishing a sales unit
+  from a case.
+- `ean_global.py`: multi source consolidation with an explicit priority order.
+- `ean_version.py`: freezes a numbered version, arbitrates ambiguous codes.
 - `eudamed.py`, `eudamed_par_reference.py`, `eudamed_fiabilite.py`,
-  `ean_verifier_libelle.py` : interrogation du registre européen public des
-  dispositifs médicaux, et mesure de la confiance à accorder à ses réponses.
-- `ar/base.py`, `ar/fournisseur_d.py`, `extraire_ar.ps1` : lecture des accusés de
-  réception fournisseurs, qui donnent des prix réellement facturés, à une date.
+  `ean_verifier_libelle.py`: queries against the public European medical device
+  registry, and a measured rule for how far its answers can be trusted.
+- `ar/base.py`, `ar/fournisseur_d.py`, `extraire_ar.ps1`: parsing of supplier order
+  acknowledgements, which give prices actually invoiced, on a given date.
 
-**Orchestration.** `run_pa.py` enchaîne les étapes, s'arrête au premier échec
-bloquant, et refuse de démarrer si les données de référence sont incohérentes.
+**Orchestration.** `run_pa.py` chains the stages, stops at the first blocking
+failure, and refuses to start if the reference data is inconsistent.
 
-## Points d'ingénierie notables
+## Engineering notes
 
-- **Garde-fous anti-aberration.** Au-delà d'un certain rapport avec le prix de
-  référence, une valeur n'est pas injectée mais déviée vers une colonne de
-  vérification. Un écart d'un ordre de grandeur n'est pas une négociation
-  commerciale, c'est une erreur de lecture, et une erreur de lecture ne se signale
-  pas d'elle-même.
+- **Anti-aberration guards.** Beyond a certain ratio against the reference price, a
+  value is not injected but diverted into a review column. An order of magnitude gap
+  is not a commercial negotiation, it is a parsing error, and a parsing error does
+  not announce itself.
 
-- **Aucune suppression silencieuse.** La population complète entre dans le pipeline,
-  et tout filtre devient une colonne. Une ligne écartée porte son motif et reste
-  consultable. Un filtre appliqué en amont ne se voit que dans le total : on ne sait
-  plus ce qui a été retiré, ni pourquoi, ni combien.
+- **No silent deletion.** The full population enters the pipeline, and every filter
+  becomes a column. An excluded row carries its reason and stays visible. A filter
+  applied upstream only shows up in the total: you no longer know what was removed,
+  why, or how much.
 
-- **Calibration mesurée, pas au jugé.** Le seuil du rapprochement par libellé a été
-  réglé sur un jeu d'épreuve construit à partir de correspondances déjà connues, en
-  masquant la référence pour ne garder que le libellé. La mesure a montré que le
-  seuil envisagé au départ était inatteignable sur les cas qui comptaient.
+- **Thresholds measured, not guessed.** The fuzzy label matching threshold was set
+  against a test set built from already known matches, hiding the reference and
+  keeping only the label. Measurement showed that the threshold originally
+  considered was unreachable on the cases that mattered.
 
-- **Détection d'un bug silencieux de conversion d'identifiants.** Une bibliothèque de
-  traitement de données convertit une colonne d'identifiants en nombres à virgule dès
-  qu'une valeur manque. La jointure tombe alors à zéro sans lever la moindre erreur.
-  La normalisation correspondante est appliquée de façon systématique.
+- **A silent identifier coercion bug, found and contained.** A data processing
+  library converts a column of identifiers into floating point numbers as soon as
+  one value is missing. The join then returns nothing, without raising anything. The
+  corresponding normalisation is applied systematically.
 
-- **Réconciliation contre un pipeline tiers.** Un second pipeline, écrit par
-  quelqu'un d'autre, lit les mêmes tarifs. Les deux lectures sont confrontées
-  automatiquement. Une première version de ce contrôle comparait, à cause d'une clé
-  de jointure trop stricte, une fraction infime des lignes tout en concluant à
-  l'absence de divergence : un feu vert non mérité, qui est le pire résultat possible.
+- **Reconciliation against a third party pipeline.** A second pipeline, written by
+  someone else, reads the same price lists. Both readings are compared
+  automatically. An early version of that check compared a tiny fraction of the rows
+  because of an overly strict join key, while reporting no divergence at all: an
+  unearned green light, which is the worst possible outcome.
 
-## Ce qui n'est pas ici, et pourquoi
+## What is not here, and why
 
-- **Les données.** Tarifs fournisseurs, exports du système d'entrepôt, classeurs de
-  travail, accusés de réception : rien de tout cela n'est publié. Le `.gitignore`
-  exclut les formats correspondants.
+- **The data.** Supplier price lists, warehouse system exports, working workbooks,
+  order acknowledgements: none of it is published. The `.gitignore` excludes the
+  corresponding formats.
 
-- **Le registre des conditions commerciales.** Le module central qui associe chaque
-  fournisseur à son dossier de tarifs, à ses remises négociées et à ses
-  particularités de lecture n'est pas inclus : c'est de l'information commerciale.
-  Il est importé par une bonne partie des fichiers présents, ce qui explique une
-  partie des imports non résolus.
+- **The commercial terms registry.** The central module mapping each supplier to its
+  price list folder, its negotiated discounts and its parsing quirks is not
+  included: it is commercial information. It is imported by a good share of the
+  files present here, which accounts for part of the unresolved imports.
 
-- **L'application de relevé terrain.** Le serveur et l'interface de scan de
-  codes-barres en entrepôt (lecture par caméra ou par douchette USB) ont été sortis
-  dans un dépôt séparé, leur cycle de vie n'étant pas celui du pipeline.
+- **The warehouse scanning app.** The server and interface used to scan barcodes on
+  the warehouse floor (camera or USB barcode gun) were moved to a separate
+  repository, since their lifecycle is not the pipeline's.
 
-- **La chaîne OCR.** Certains tarifs n'existent qu'en PDF image et demandent un OCR.
-  Le module qui s'en charge ne fait pas partie de cet extrait ; les fichiers présents
-  ici traitent des PDF à couche texte. Les limites connues de cette approche sont
-  documentées dans le code : un caractère mal reconnu ne produit pas une erreur mais
-  un prix faux et silencieux, ce qui impose de croiser deux moteurs et de recouper
-  par un contrôle de vraisemblance.
+- **The OCR chain.** Some price lists exist only as scanned images and require OCR.
+  The module that handles this is not part of this extract; the files here deal with
+  PDFs that carry a text layer. The known limits of that approach are documented in
+  the code: a misread character does not raise an error, it produces a wrong and
+  silent price, which is why two engines are cross checked and the result is tested
+  for plausibility.
 
-## Stack technique
+## Stack
 
-Python 3, `pandas` et `numpy` pour le traitement tabulaire, `openpyxl` pour la
-lecture et l'écriture de classeurs Excel, `pdfplumber` pour les PDF à couche texte,
-`rapidfuzz` pour le rapprochement approximatif de libellés, `requests` pour
-l'interrogation d'API publiques. Un script PowerShell pour l'extraction de pièces
-jointes depuis une messagerie locale.
+Python 3, `pandas` and `numpy` for tabular processing, `openpyxl` for reading and
+writing Excel workbooks, `pdfplumber` for text layer PDFs, `rapidfuzz` for fuzzy
+label matching, `requests` for public API queries. A PowerShell script handles
+attachment extraction from a local mail client.
 
-## Contexte
+Identifiers, function names and output column headers remain in French: they are
+contracts shared across files and with the workbooks produced, and renaming them
+would have been a cosmetic change with a real risk of silent breakage.
 
-Projet conçu et réalisé en autonomie dans le cadre d'une mission achats et supply
-chain, sur plusieurs milliers de références et près de 90 fournisseurs. La couverture
-en codes EAN exploitables a été portée à plus de 70 % du périmètre suivi, et la
-couverture en prix d'achat à jour à plus de 75 %.
+## Context
 
-## Licence
+Designed and built independently as part of a procurement and supply chain
+assignment, covering several thousand product references and close to 90 suppliers.
+Usable barcode coverage was raised to more than 70 % of the tracked scope, and up to
+date purchase price coverage to more than 75 %.
 
-Code fourni à titre de démonstration. Tous droits réservés.
+## License
+
+Code provided for demonstration purposes. All rights reserved.

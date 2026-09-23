@@ -1,63 +1,63 @@
 # -*- coding: utf-8 -*-
 """
-Extracteur des CONDITIONS du FOURNISSEUR B (Excel) — le tarif 2026.
+Extractor for FOURNISSEUR B's CONDITIONS (Excel), the 2026 price list.
 
-POURQUOI CE FICHIER PLUTOT QUE LE PDF
-    Le projet lisait « tarif_fournisseur.pdf » et n'en tirait que 52 lignes,
-    laissant 130 articles du perimetre sans prix. Le meme tarif existe en
-    Excel — « tarif_fournisseur.xlsx » — avec douze onglets produits et
-    environ 195 references chiffrees.
+WHY THIS FILE RATHER THAN THE PDF
+    The project used to read "tarif_fournisseur.pdf" and got only 52 rows
+    out of it, leaving 130 in-scope items without a price. The same price
+    list exists as Excel ("tarif_fournisseur.xlsx") with twelve product
+    tabs and roughly 195 priced references.
 
-    Il etait ecarte pour une raison sans rapport avec son contenu : son NOM
-    porte « 2025 », donc l'inventaire lui donnait le millesime 2025, alors
-    que sa premiere page s'intitule « CONDITIONS 2026 (applicable au 1er
-    decembre 2025 sous nouvelle nomenclature) ». Le PDF, lui, avait ete
-    retenu par choix manuel. C'est le piege de millesime documente dans les
-    regles du projet, dans sa version la plus couteuse.
+    It was being discarded for a reason unrelated to its contents: its
+    NAME says "2025", so the inventory assigned it the 2025 edition,
+    while its first page is titled "CONDITIONS 2026 (applicable au 1er
+    decembre 2025 sous nouvelle nomenclature)". The PDF, by contrast, had
+    been picked by hand. This is the edition-year trap documented in the
+    project rules, in its most expensive form.
 
-LA MISE EN PAGE, QUI EST « UN PEU LE BORDEL »
-    Chaque onglet melange trois sortes de lignes :
+THE LAYOUT, WHICH IS "A BIT OF A MESS"
+    Each tab mixes three kinds of row:
 
-      - une ligne de CATEGORIE de nomenclature, sans prix
-        « FMP - Fauteuil non-modulaire a propulsion manuelle ou a pousser »
-      - une ligne PRODUIT, avec son prix a la quantite 1
-        « MODELE EXEMPLE - Accoudoirs relevables »  150,00  145,00  3*
-      - une ou plusieurs lignes de PALIER, sans designation, qui se
-        rattachent au produit du dessus
-        (vide)                                             140,00  6*
+      - a nomenclature CATEGORY row, with no price
+        "FMP - Fauteuil non-modulaire a propulsion manuelle ou a pousser"
+      - a PRODUCT row, with its price at quantity 1
+        "MODELE EXEMPLE - Accoudoirs relevables"   150,00  145,00  3*
+      - one or more TIER rows, with no label, which attach to the product
+        above
+        (empty)                                            140,00  6*
 
-    (libelles et montants ci-dessus : valeurs d'exemple)
+    (labels and amounts above: sample values)
 
-    Un produit dont on lirait le palier au lieu du prix unitaire serait
-    valorise trop bas — c'est l'incident du 08/09 chez le responsable des
-    prix, a l'envers. On prend donc la colonne « Qte 1 », et les paliers
-    partent en colonne `paliers`, pour memoire.
+    A product whose tier price was read instead of its unit price would
+    be valued too low: that is the 08/09 incident at the pricing
+    manager's, in reverse. So we take the "Qte 1" column, and the tiers
+    go into the `paliers` column, for the record.
 
-LE PIEGE DES POURCENTAGES
-    Certaines lignes ne portent pas un prix mais un TAUX DE REMISE sur le
-    prix public, qui est en derniere colonne. Le MODELE EXEMPLE n'a pas de
-    prix : il a « 15 % » et un public de 600,00, donc 510,00.
+THE PERCENTAGE TRAP
+    Some rows carry not a price but a DISCOUNT RATE off the list price,
+    which sits in the last column. MODELE EXEMPLE has no price: it has
+    "15 %" and a list price of 600,00, hence 510,00.
 
-    Trois ecritures coexistent, et c'est le FORMAT de la cellule qui les
-    departage — pas leur valeur :
+    Three notations coexist, and it is the cell FORMAT that tells them
+    apart, not their value:
 
-        150             format « 0 € »   -> un prix
-        0,15            format « 0% »    -> un taux de 15 %
-        « 10+5% »       texte            -> une remise COMPOSEE
+        150             format "0 €"    -> a price
+        0,15            format "0%"     -> a rate of 15 %
+        "10+5%"         text            -> a COMPOUND discount
 
-    La remise composee est le piege veritable. « 10+5% » ne fait pas 15 %
-    mais 14,5 % : 1 - (0,90 x 0,95). Le fichier le demontre lui-meme, en
-    ecrivant ailleurs « 14,5% (10+5%) », « 19% (10+10%) », « 24% (20+5%) »
-    — trois fois la meme regle. Une premiere version lisait « 10+1% » comme
-    1 % et valorisait un fauteuil a 99 % de son prix public.
+    The compound discount is the real trap. "10+5%" is not 15 % but
+    14.5 %: 1 - (0.90 x 0.95). The file demonstrates this itself, writing
+    elsewhere "14,5% (10+5%)", "19% (10+10%)", "24% (20+5%)", the same
+    rule three times over. An early version read "10+1%" as 1 % and
+    valued a wheelchair at 99 % of its list price.
 
-    Sans le format, 0,15 aurait pu passer pour quinze centimes.
+    Without the format, 0,15 could have passed for fifteen cents.
 
-    (tous les taux et montants de ce docstring : valeurs d'exemple)
+    (every rate and amount in this docstring: sample values)
 
-PAS DE REFERENCE FOURNISSEUR
-    Ces onglets n'en portent pas — comme le Fournisseur E. Le rapprochement
-    se fera donc par le libelle, avec les precautions de pa_libelle.py.
+NO SUPPLIER REFERENCE
+    These tabs carry none, just like Supplier E. Matching will therefore
+    go through the label, with the precautions taken in pa_libelle.py.
 """
 
 from __future__ import annotations
@@ -71,20 +71,20 @@ from extracteurs.base import chemin_lisible, finaliser, nettoyer_texte
 
 FOURNISSEUR = "FOURNISSEUR B"
 
-# Onglets qui ne portent aucun produit.
+# Tabs that carry no product at all.
 HORS_PRODUITS = {
     "page de garde", "administratifs", "cgv", "sommaire", "feuil1",
 }
 
-# « 151.5 », « 151,50 » — un prix. On exige au plus deux decimales.
+# "151.5", "151,50": a price. At most two decimals are allowed.
 PRIX = re.compile(r"^\d{1,6}(?:[.,]\d{1,2})?$")
-# « 14,5% (10+5%) », « 24% (20+5%) »  # valeurs d'exemple
+# "14,5% (10+5%)", "24% (20+5%)"  # sample values
 POURCENT = re.compile(r"(\d{1,2}(?:[.,]\d+)?)\s*%")
-# « 3* », « 9* », « 3 et+ », « 2 »
+# "3*", "9*", "3 et+", "2"
 QUANTITE = re.compile(r"(\d{1,4})")
 
-# En dessous de ce montant, une valeur n'est pas un prix de fauteuil roulant
-# mais un taux que Excel a stocke en nombre (0,25 pour 25 %).
+# Below this amount, a value is not a wheelchair price but a rate that
+# Excel stored as a number (0.25 for 25 %).
 PLANCHER_PRIX = 1.0
 
 
@@ -106,23 +106,23 @@ def _nombre(valeur):
 
 
 def _taux_depuis_texte(brut: str) -> float | None:
-    """Le taux de remise qu'annonce un texte, en pourcentage.
+    """The discount rate a piece of text announces, as a percentage.
 
-    Trois formes, dans cet ordre de fiabilite :
+    Three forms, in decreasing order of reliability:
 
-        « 14,5% (10+5%) »   le taux est ecrit avant la parenthese : on le lit
-        « 10+5% »           remise COMPOSEE : 1 - (0,90 x 0,95) = 14,5 %
-        « 15% »             un taux simple
+        "14,5% (10+5%)"   the rate is written before the bracket: read it
+        "10+5%"           COMPOUND discount: 1 - (0.90 x 0.95) = 14.5 %
+        "15%"             a simple rate
 
-    (taux ci-dessus : valeurs d'exemple)
+    (rates above: sample values)
     """
     texte = brut.replace(",", ".")
-    # Forme « X% (...) » : le total est deja calcule, on ne recalcule pas.
+    # Form "X% (...)": the total is already computed, do not recompute.
     avant = re.match(r"\s*(\d{1,2}(?:\.\d+)?)\s*%\s*\(", texte)
     if avant:
         return float(avant.group(1))
 
-    # Forme composee « 10+5% », « 10+5+2% »  # valeurs d'exemple
+    # Compound form "10+5%", "10+5+2%"  # sample values
     if "+" in texte:
         parts = re.findall(r"(\d{1,2}(?:\.\d+)?)", texte)
         if len(parts) >= 2:
@@ -142,11 +142,14 @@ def _taux_depuis_texte(brut: str) -> float | None:
 
 
 def _prix_ou_taux(valeur, format_cellule, public):
-    """(prix HT, comment il a ete obtenu) — ou (None, motif).
+    """(net price, how it was obtained), or (None, reason).
 
-    `format_cellule` est le format Excel de la cellule. C'est LUI qui dit si
-    0,15 vaut quinze centimes ou quinze pour cent : la valeur seule
-    ne le dit pas, et deviner au seuil marchait par chance.
+    `format_cellule` is the Excel format of the cell. THAT is what says
+    whether 0,15 means fifteen cents or fifteen percent: the value alone
+    does not say so, and guessing from a threshold only worked by luck.
+
+    The second element is kept in French: it lands in the colonne_prix
+    output column of the reconciliation report.
     """
     brut = _texte(valeur)
     if not brut:
@@ -156,7 +159,7 @@ def _prix_ou_taux(valeur, format_cellule, public):
     est_pourcent = "%" in format_cellule
     valeur_num = _nombre(brut)
 
-    # Un texte qui porte un « % » est un taux, quel que soit le format.
+    # Text carrying a "%" is a rate, whatever the format says.
     if "%" in brut:
         taux = _taux_depuis_texte(brut)
         if taux is None:
@@ -165,8 +168,8 @@ def _prix_ou_taux(valeur, format_cellule, public):
             return None, "taux sans prix public"
         return round(public * (1 - taux / 100), 4), f"public - {taux:g}%"
 
-    # Une valeur numerique dans une cellule formatee en pourcentage EST un
-    # taux : 0,15 sous le format « 0% » s'affiche « 15 % ».
+    # A numeric value in a percentage-formatted cell IS a rate: 0,15
+    # under the "0%" format displays as "15 %".
     if est_pourcent and valeur_num is not None:
         if not 0 < valeur_num < 1:
             return None, "taux hors bornes"
@@ -177,18 +180,18 @@ def _prix_ou_taux(valeur, format_cellule, public):
 
     if valeur_num is None:
         return None, ""
-    # Reste le cas ordinaire : un prix, dans une cellule formatee en euros.
+    # That leaves the ordinary case: a price, in a euro-formatted cell.
     if valeur_num < PLANCHER_PRIX:
         return None, "valeur trop faible pour un prix"
     return round(valeur_num, 4), "tarif net unitaire HT"
 
 
 def _colonnes(brut: pd.DataFrame) -> dict | None:
-    """Repere la ligne d'en-tete et associe chaque role a un index.
+    """Locates the header row and maps each role to an index.
 
-    On lit les INTITULES plutot que des positions figees : les onglets ne
-    partagent pas tous la meme largeur, et une colonne inseree decalerait
-    silencieusement tous les prix.
+    We read the HEADINGS rather than fixed positions: the tabs do not all
+    share the same width, and an inserted column would silently shift
+    every price.
     """
     for ligne in range(min(12, len(brut))):
         valeurs = [_texte(v).lower() for v in brut.iloc[ligne]]
@@ -211,7 +214,7 @@ def _colonnes(brut: pd.DataFrame) -> dict | None:
                 roles.setdefault("lpp", index)
         if "prix" not in roles:
             continue
-        # La designation precede toujours la premiere colonne de prix.
+        # The label always comes before the first price column.
         roles.setdefault("designation", max(roles["prix"] - 1, 0))
         roles.setdefault("palier", roles["prix"] + 1)
         return roles
@@ -222,8 +225,8 @@ def extract(path) -> pd.DataFrame:
     chemin = Path(path)
     lisible = chemin_lisible(chemin)
     classeur = pd.ExcelFile(lisible)
-    # data_only=True donne la valeur en cache des formules, et surtout
-    # `number_format`, sans lequel on ne peut pas distinguer un taux d'un prix.
+    # data_only=True gives the cached value of formulas and, above all,
+    # `number_format`, without which a rate cannot be told from a price.
     from openpyxl import load_workbook
     livre = load_workbook(lisible, data_only=True)
 
@@ -251,7 +254,7 @@ def extract(path) -> pd.DataFrame:
                 return ligne.iloc[index]
 
             def format_de(role):
-                """Le format Excel de la cellule, ou '' si introuvable."""
+                """The Excel format of the cell, or '' if not found."""
                 index = roles.get(role)
                 if onglet is None or index is None:
                     return ""
@@ -266,11 +269,11 @@ def extract(path) -> pd.DataFrame:
             quantite = _texte(case("quantite"))
 
             if designation and prix is not None:
-                # Nouvelle ligne PRODUIT
+                # New PRODUCT row
                 courant = {
                     "fournisseur": FOURNISSEUR,
-                    # La categorie rejoint la designation : c'est elle qui
-                    # porte FMP / FRM, que le WMS reprend dans ses libelles.
+                    # The category joins the label: it is what carries
+                    # FMP / FRM, which the WMS echoes in its own labels.
                     "designation": nettoyer_texte(
                         f"{categorie} | {designation}" if categorie
                         else designation),
@@ -289,21 +292,21 @@ def extract(path) -> pd.DataFrame:
                         courant["_paliers"].append(
                             f"{seuil.group(1)}:{prix_palier:.2f}")
             elif not designation and prix_palier is not None and courant:
-                # Ligne de PALIER rattachee au produit du dessus
+                # TIER row attached to the product above
                 seuil = QUANTITE.search(quantite) if quantite else None
                 if seuil:
                     courant["_paliers"].append(
                         f"{seuil.group(1)}:{prix_palier:.2f}")
             elif designation and prix is None:
-                # Ligne de CATEGORIE de nomenclature : elle ne porte pas de
-                # prix, elle ferme le produit precedent et s'applique a tous
-                # les produits qui suivent.
+                # Nomenclature CATEGORY row: it carries no price, it
+                # closes the previous product and applies to every
+                # product that follows.
                 #
-                # Elle n'est pas decorative : « FMP - Fauteuil non-modulaire »
-                # et « FRM - Fauteuil modulaire » distinguent deux familles
-                # que le WMS nomme lui aussi (VPH FMP ..., VPH FRM ...). Sans
-                # elle, un fauteuil modulaire peut recevoir le prix d'un
-                # non-modulaire.
+                # It is not decorative: "FMP - Fauteuil non-modulaire"
+                # and "FRM - Fauteuil modulaire" distinguish two families
+                # that the WMS names too (VPH FMP ..., VPH FRM ...).
+                # Without it, a modular wheelchair can end up with the
+                # price of a non-modular one.
                 courant = None
                 categorie = designation
 
@@ -324,7 +327,7 @@ if __name__ == "__main__":
     table = extract(cible)
     pd.set_option("display.width", 230)
     pd.set_option("display.max_colwidth", 60)
-    print(f"{len(table)} lignes extraites de {cible.name}")
+    print(f"{len(table)} rows extracted from {cible.name}")
     colonnes = [c for c in ("designation", "prix_achat_unitaire_ht",
                             "colonne_prix", "paliers") if c in table.columns]
     print(table[colonnes].head(30).to_string(index=False))

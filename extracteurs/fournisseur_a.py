@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Extracteur du catalogue tarifaire du FOURNISSEUR A (fichier Excel,
+Extractor for the FOURNISSEUR A price catalogue (Excel file,
 tarif_fournisseur.xlsx).
 
-Particularite du fichier : les ~15 premieres lignes sont un en-tete de
-courtoisie (adresse, conditions de port, franco, mention "TARIF DISTRIBUTEUR
-CONFIDENTIEL"). La vraie ligne d'en-tete est detectee dynamiquement en
-cherchant la premiere ligne contenant a la fois "Reference" et "Designation",
-pour que le code resiste a un decalage dans les millesimes suivants.
+Quirk of this file: the first ~15 rows are a courtesy header (address,
+shipping terms, free-shipping threshold, a "TARIF DISTRIBUTEUR
+CONFIDENTIEL" notice). The real header row is detected dynamically by
+looking for the first row containing both "Reference" and "Designation",
+so the code survives a shift in later editions.
 """
 
 from __future__ import annotations
@@ -33,26 +33,27 @@ from extracteurs.base import (
 
 FOURNISSEUR = "FOURNISSEUR A"
 
-# Mots-cles servant a reperer la ligne d'en-tete reelle
+# Keywords used to locate the real header row
 MOTS_CLES_ENTETE = ["Référence", "Désignation"]
 
-# Correspondance en-tete du fichier -> champ du schema normalise.
-# La cle est l'en-tete normalisee (minuscules, sans accent ni ponctuation).
-# On matche par NOM et non par position : c'est ce qui evite de confondre
-# "Votre tarif net HT unitaire" avec les paliers "Votre tarif net HT 2/3".
+# Mapping from file heading -> normalised schema field.
+# The key is the normalised heading (lower case, no accents, no
+# punctuation). We match by NAME and not by position: that is what avoids
+# confusing "Votre tarif net HT unitaire" with the tiers "Votre tarif net
+# HT 2/3".
 ENTETES_VERS_CHAMPS = {
     "reference": "ref_fournisseur",
     "designation": "designation",
-    # ATTENTION : dans le tarif 2026 cette colonne est intitulee
-    # "Tarif public conseille TTC" -> c'est bien du TTC, verifie sur les
-    # donnees (prix_achat = TTC / (1 + TVA) x (1 - remise)).
+    # CAREFUL: in the 2026 price list this column is headed "Tarif public
+    # conseille TTC" -> it really does include VAT, verified against the
+    # data (purchase price = incl. VAT / (1 + VAT) x (1 - discount)).
     "tarifpublicconseillettc": "tarif_public_ttc",
     "tva": "tva_taux",
     "remise": "remise_taux",
     "votretarifnethtunitaire": "prix_achat_unitaire_ht",
-    # Prix degressifs : 878 lignes ont un palier 2, 468 un palier 3.
-    # Ce sont des PRIX UNITAIRES applicables a partir de la quantite seuil,
-    # pas des prix de lot.
+    # Volume pricing: 878 rows have a tier 2, 468 have a tier 3. These
+    # are UNIT PRICES applying from the threshold quantity on, not lot
+    # prices.
     "qte2": "palier2_qte",
     "votretarifnetht2": "palier2_prix_ht",
     "qte3": "palier3_qte",
@@ -66,9 +67,9 @@ ENTETES_VERS_CHAMPS = {
     "origine": "origine",
 }
 
-# Filet de securite : positions 0-based attendues d'apres le tarif 2026.
-# Utilisees uniquement pour les champs que le matching par nom n'a pas
-# trouves (en-tete renomme, cellule fusionnee, etc.).
+# Safety net: 0-based positions expected from the 2026 price list. Used
+# only for the fields that name matching failed to find (renamed heading,
+# merged cell, and so on).
 INDEX_SECOURS = {
     "ref_fournisseur": 1,
     "designation": 2,
@@ -89,14 +90,14 @@ INDEX_SECOURS = {
     "origine": 21,
 }
 
-# Colonnes volontairement ignorees :
-#   0  Page              -> mise en page du catalogue papier
+# Columns deliberately ignored:
+#   0  Page              -> layout of the printed catalogue
 #   13 Packaging retail
-#   15 Eco Part TTC      -> recalculable depuis eco_part_ht
-#   18 Poids brut
-#   20 Code douanier
+#   15 Eco Part TTC      -> recomputable from eco_part_ht
+#   18 Poids brut        -> gross weight
+#   20 Code douanier     -> customs code
 
-# Champs a convertir en nombre / en texte
+# Fields to convert to numbers / to text
 CHAMPS_NUM = {
     "tarif_public_ttc",
     "tva_taux",
@@ -112,7 +113,7 @@ CHAMPS_NUM = {
 
 
 def _construire_mapping(feuille, ligne_entete: int) -> dict[str, int]:
-    """Associe chaque champ du schema a un index de colonne 0-based."""
+    """Maps each schema field to a 0-based column index."""
     entetes = next(
         feuille.iter_rows(
             min_row=ligne_entete, max_row=ligne_entete, values_only=True
@@ -124,12 +125,12 @@ def _construire_mapping(feuille, ligne_entete: int) -> dict[str, int]:
         if entete is None:
             continue
         champ = ENTETES_VERS_CHAMPS.get(_normaliser(str(entete)))
-        # Le premier trouve gagne : evite qu'un doublon d'en-tete ecrase
-        # la bonne colonne.
+        # First found wins: prevents a duplicated heading from
+        # overwriting the right column.
         if champ and champ not in mapping:
             mapping[champ] = index
 
-    # Complement par les positions connues pour les champs manquants
+    # Fill in the missing fields from the known positions
     for champ, index in INDEX_SECOURS.items():
         if champ not in mapping and index < len(entetes):
             mapping[champ] = index
@@ -137,11 +138,11 @@ def _construire_mapping(feuille, ligne_entete: int) -> dict[str, int]:
     return mapping
 
 
-def extract(path) -> "pd.DataFrame":  # noqa: F821 (type resolu a l'execution)
-    """Extrait le catalogue du FOURNISSEUR A vers le schema normalise commun."""
+def extract(path) -> "pd.DataFrame":  # noqa: F821 (type resolved at runtime)
+    """Extracts the FOURNISSEUR A catalogue into the common schema."""
     path = Path(path)
-    # read_only : le fichier fait ~3100 lignes, on evite de tout charger en RAM.
-    # data_only : on veut les valeurs calculees, pas les formules.
+    # read_only: the file has ~3100 rows, avoid loading it all into RAM.
+    # data_only: we want computed values, not formulas.
     classeur = openpyxl.load_workbook(
         chemin_lisible(path), read_only=True, data_only=True
     )
@@ -152,7 +153,7 @@ def extract(path) -> "pd.DataFrame":  # noqa: F821 (type resolu a l'execution)
 
     manquants = [c for c in ("ref_fournisseur", "designation") if c not in mapping]
     if manquants:
-        raise ValueError(f"Colonnes indispensables introuvables : {manquants}")
+        raise ValueError(f"Essential columns not found: {manquants}")
 
     lignes: list[dict] = []
     for valeurs in feuille.iter_rows(min_row=ligne_entete + 1, values_only=True):
@@ -160,7 +161,7 @@ def extract(path) -> "pd.DataFrame":  # noqa: F821 (type resolu a l'execution)
             continue
 
         def cellule(champ):
-            """Valeur brute d'un champ, ou None si la colonne est absente."""
+            """Raw value of a field, or None if the column is missing."""
             index = mapping.get(champ)
             if index is None or index >= len(valeurs):
                 return None
@@ -169,8 +170,8 @@ def extract(path) -> "pd.DataFrame":  # noqa: F821 (type resolu a l'execution)
         ref = nettoyer_texte(cellule("ref_fournisseur"))
         designation = nettoyer_texte(cellule("designation"))
 
-        # On ignore les lignes sans reference ou sans designation :
-        # separateurs de rubrique, lignes vides, pieds de page.
+        # Rows without a reference or a label are skipped: section
+        # separators, blank rows, page footers.
         if not ref or not designation:
             continue
 
@@ -187,19 +188,19 @@ def extract(path) -> "pd.DataFrame":  # noqa: F821 (type resolu a l'execution)
         for champ in CHAMPS_NUM:
             ligne[champ] = nettoyer_nombre(cellule(champ))
 
-        # Conditionnement : absent ou nul -> 1, et on garde la trace.
+        # Pack size: missing or zero -> 1, and the fact is recorded.
         (
             ligne["conditionnement"],
             ligne["conditionnement_suppose"],
         ) = normaliser_conditionnement(cellule("conditionnement"))
 
-        # Prix du colis complet = prix unitaire x nombre d'unites par colis.
+        # Full case price = unit price x number of units per case.
         ligne["prix_colis_ht"] = calculer_prix_colis(
             ligne["prix_achat_unitaire_ht"], ligne["conditionnement"]
         )
 
-        # Controle : le prix net du fichier correspond-il bien au tarif
-        # public TTC diminue de la TVA puis de la remise ?
+        # Check: does the net price in the file really match the VAT
+        # inclusive list price, less VAT and then less the discount?
         (
             ligne["prix_recalcule"],
             ligne["ecart_prix"],
@@ -211,7 +212,7 @@ def extract(path) -> "pd.DataFrame":  # noqa: F821 (type resolu a l'execution)
             ligne["prix_achat_unitaire_ht"],
         )
 
-        # Paliers degressifs : prix unitaires applicables au-dela d'un seuil
+        # Volume tiers: unit prices applying beyond a threshold
         prix_base = ligne["prix_achat_unitaire_ht"]
         ligne["economie_palier2_pct"] = economie_palier(
             prix_base, ligne["palier2_prix_ht"]

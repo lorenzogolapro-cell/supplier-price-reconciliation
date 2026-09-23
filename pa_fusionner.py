@@ -1,26 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-Ajoute les propositions de PA au classeur du responsable des prix, sans
-rien y ecraser.
+Adds the purchase-price proposals to the price owner's workbook, without
+overwriting anything in it.
 
     python pa_fusionner.py
 
-Le classeur du responsable des prix fait foi (PERIMETRE.md §6) : on
-confirme, on comble, on signale, on n'ecrase jamais. Ce script ne modifie
-donc AUCUNE ligne existante — il ajoute les siennes a la suite, dans les
-memes colonnes.
+The price owner's workbook is authoritative, by governance rule: we
+confirm, we fill gaps, we flag, we never overwrite. So this script
+modifies NO existing row: it appends its own below them, in the same
+columns.
 
-Il n'ecrit pas non plus dans son fichier : celui-ci est ouvert dans Excel
-la moitie du temps, et surtout ecraser le document de travail de
-quelqu'un d'autre n'est pas une operation qu'on fait sans qu'il le sache.
-La sortie est une COPIE, a cote, que l'on compare puis remplace.
+Nor does it write into their file: that file is open in Excel half the
+time, and above all, overwriting somebody else's working document is not
+an operation you carry out without them knowing. The output is a COPY,
+alongside, which they compare and then replace.
 
-Une colonne « Origine ligne » est ajoutee en fin de tableau : elle dit
-« Responsable prix » ou « Proposition <date> ». Sans elle, les deux
-populations deviennent indistinguables des la premiere sauvegarde, et plus
-personne ne sait ce qui a ete valide.
+An "Origine ligne" column is added at the end of the table: it says
+"Responsable prix" or "Proposition <date>". Without it the two
+populations become indistinguishable from the very first save, and
+nobody knows any more what has been validated.
 
-Sortie : ./data/prix_valides + propositions <date>.xlsx
+Output: ./data/prix_valides + propositions <date>.xlsx
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ EXTRACT = wms_extract.chemin()
 FEUILLE = "Feuil1"
 MARQUE = f"Proposition {date.today():%d/%m/%Y}"
 
-# Colonne du classeur <- colonne de mes propositions
+# Workbook column <- column of my proposals
 CORRESPONDANCE = {
     "Code article": "Code article",
     "Libellé": "Libellé déclinaison ^(1)",
@@ -65,17 +65,17 @@ CORRESPONDANCE = {
 
 
 def propositions() -> pd.DataFrame:
-    """Les propositions à ajouter, des deux sources.
+    """The proposals to add, from both sources.
 
-    Deux gisements, et l'ordre compte :
+    Two seams, and the order matters:
 
-      1. la CONSOLIDATION 2026 — « base_prix.xlsx ». C'est la source
-         principale du responsable des prix, deja arbitree et declaree
-         bonne. Elle prime.
-      2. mes propositions tirees des tarifs fournisseurs, pour tout ce
-         que la consolidation ne couvre pas.
+      1. the 2026 CONSOLIDATION, "base_prix.xlsx". This is the price
+         owner's main source, already arbitrated and declared good. It
+         takes precedence.
+      2. my proposals drawn from the supplier price lists, for everything
+         the consolidation does not cover.
 
-    Un article servi par les deux prend la valeur de la premiere.
+    An item served by both takes the value from the first.
     """
     lots = []
 
@@ -97,44 +97,44 @@ def propositions() -> pd.DataFrame:
             lots.append(lot)
             consolidation += len(lot)
         if consolidation:
-            print(f"  {consolidation} venant de la consolidation 2026")
+            print(f"  {consolidation} coming from the 2026 consolidation")
 
     for fichier in sorted(SORTIE_ACHATS.glob("pa_completer_*.xlsx")):
         try:
             lot = pd.read_excel(chemin_lisible(fichier),
                                 sheet_name="À compléter", skiprows=3)
         except Exception as err:
-            print(f"  ! {fichier.name} : {type(err).__name__}")
+            print(f"  ! {fichier.name}: {type(err).__name__}")
             continue
         if lot.empty:
             continue
-        # Le catalogue pro hors perimetre est une population a part : elle
-        # n'a eu ni vente ni reception sur douze mois. Elle vaut d'etre
-        # tarifee — l'article est publie — mais elle ne doit jamais se
-        # confondre avec le perimetre dans un decompte.
+        # The pro catalogue outside the scope is a population of its own:
+        # it has had neither a sale nor a receipt over twelve months. It
+        # deserves a price (the item is published) but it must never be
+        # mixed up with the scope in a count.
         lot["_origine"] = (
             f"Catalogue pro hors périmètre {date.today():%d/%m/%Y}"
             if "CATALOGUE-PRO" in fichier.stem.upper() else MARQUE)
         lots.append(lot)
     if not lots:
-        raise SystemExit("Aucune proposition à ajouter.")
+        raise SystemExit("No proposal to add.")
     tout = pd.concat(lots, ignore_index=True)
     tout = tout[pd.to_numeric(tout["Nouveau PA"],
                               errors="coerce").fillna(0) > 0]
-    print(f"{len(tout)} propositions lues dans {len(lots)} classeurs")
+    print(f"{len(tout)} proposals read from {len(lots)} workbooks")
 
-    # Un meme article peut sortir de deux classeurs fournisseurs — un
-    # fragment de nom qui en designe plusieurs, un article rattache a
-    # deux tarifs. On n'en garde qu'une ligne.
+    # The same item can come out of two supplier workbooks: a name
+    # fragment that matches several of them, an item attached to two
+    # price lists. We keep only one row.
     tout["_code"] = tout["Code article"].astype(str).str.strip()
     doubles = tout["_code"].duplicated()
     if doubles.any():
-        print(f"  {int(doubles.sum())} doublons internes écartés")
+        print(f"  {int(doubles.sum())} internal duplicates dropped")
         tout = tout[~doubles]
 
-    # Un prix calcule traine ses decimales flottantes : 579.5999999999999
-    # n'est pas un prix, c'est un artefact. Le classeur du responsable des
-    # prix va jusqu'a quatre decimales, on s'y tient.
+    # A computed price drags its floating decimals along: 579.5999999999999
+    # is not a price, it is an artefact. The price owner's workbook goes to
+    # four decimals, so we stick to that.
     for colonne in ("Nouveau PA", "Ancien PA"):
         if colonne in tout.columns:
             tout[colonne] = pd.to_numeric(tout[colonne],
@@ -145,11 +145,11 @@ def propositions() -> pd.DataFrame:
     return tout
 
 
-# --- mise en forme --------------------------------------------------------
-# Le fichier part par mail : il doit se lire sans mode d'emploi. On ne
-# touche pas aux valeurs, seulement a ce qui aide l'oeil — l'en-tete
-# fige, un filtre, des largeurs tenables, et surtout une couleur qui
-# distingue ce qui est valide de ce qui attend une relecture.
+# --- formatting -----------------------------------------------------------
+# The file goes out by email: it must be readable with no instructions.
+# We do not touch the values, only what helps the eye: a frozen header, a
+# filter, workable widths, and above all a colour that tells what has
+# been validated from what is waiting for review.
 FOND_ENTETE = PatternFill("solid", fgColor="1F3B36")
 FOND_RESPONSABLE = PatternFill("solid", fgColor="EAF1EE")
 FOND_TARIF = PatternFill("solid", fgColor="FBF3E4")
@@ -170,31 +170,31 @@ EUROS = ("Ancien PA", "Nouveau PA")
 POURCENT = ("Écart %",)
 
 
-# Les feuilles du responsable des prix que nous ne regenerons PAS. Leur
-# contenu date du jour ou il les a produites, et il ne bouge plus.
+# The price owner's sheets that we do NOT regenerate. Their content dates
+# from the day they produced them, and it no longer moves.
 FEUILLES_FIGEES = ("non raproch", "non rapproch", "suivi integration")
 
-# Marque posee DEVANT le nom de l'onglet, pour qu'elle survive a la
-# troncature d'Excel a 31 caracteres.
+# Mark placed IN FRONT of the tab name, so that it survives Excel's
+# truncation at 31 characters.
 PREFIXE_FIGE = "FIGÉ — "
 
 
 def dater_les_feuilles_figees(classeur) -> None:
-    """Dit, sur l'onglet lui-meme, qu'une feuille n'est plus a jour.
+    """Says, on the tab itself, that a sheet is no longer up to date.
 
-    Nous n'ecrivons que Feuil1 — c'est la regle, et elle protege le travail
-    du responsable des prix. Mais la feuille « non raproché » porte 624
-    lignes arretees au 02/09 et ne bouge plus : identique dans les dix
-    versions du classeur. Elle affirme donc que le Fournisseur J n'est pas
-    rapproche alors que ses seize articles ont un prix dans Feuil1 — et
-    c'est elle qu'on ouvre en premier, parce que son nom repond a la
-    question qu'on se pose.
+    We only write Feuil1: that is the rule, and it protects the price
+    owner's work. But the "non raproché" sheet carries 624 rows frozen at
+    02/09 and no longer moves: identical across the ten versions of the
+    workbook. It therefore claims that Supplier J is not matched when in
+    fact its sixteen items have a price in Feuil1, and it is the sheet
+    people open first, because its name answers the question they are
+    asking.
 
-    Une donnee perimee qui porte un nom exact est pire qu'une donnee
-    absente. On ne TOUCHE PAS a son contenu : on renomme l'onglet pour que
-    sa date se lise avant son titre, et on lui met une couleur d'alerte.
+    Stale data under an accurate name is worse than missing data. We do
+    NOT TOUCH its content: we rename the tab so that its date reads
+    before its title, and we give it an alert colour.
 
-    Le contenu reste integralement lisible, et rien n'est supprime.
+    The content stays fully readable, and nothing is deleted.
     """
     from openpyxl.utils.exceptions import InvalidFileException  # noqa: F401
 
@@ -203,25 +203,25 @@ def dater_les_feuilles_figees(classeur) -> None:
         if not any(marque in titre for marque in FEUILLES_FIGEES):
             continue
         if feuille.title.upper().startswith(PREFIXE_FIGE.upper()):
-            continue  # deja date lors d'une passe precedente
-        # La marque passe DEVANT : Excel limite un onglet a 31 caracteres et
-        # tronque a droite, si bien qu'un avertissement place a la fin est
-        # le premier a disparaitre — « non raproché… (FIGÉ voir Feuil1 ».
-        # Devant, il reste lisible meme sur un onglet etroit.
+            continue  # already dated on a previous run
+        # The mark goes IN FRONT: Excel caps a tab at 31 characters and
+        # truncates on the right, so a warning placed at the end is the
+        # first thing to disappear ("non raproché... (FIGÉ voir Feuil1").
+        # In front, it stays readable even on a narrow tab.
         nouveau = f"{PREFIXE_FIGE}{feuille.title.strip()}"[:31]
         try:
             feuille.title = nouveau
             feuille.sheet_properties.tabColor = "C00000"
-            print(f"  onglet « {titre} » renommé « {nouveau} » — "
-                  f"il date d'avant le chantier et ne se régénère pas")
+            print(f"  tab '{titre}' renamed '{nouveau}': it predates the "
+                  f"workstream and is not regenerated")
         except Exception as erreur:
-            print(f"  ! onglet « {titre} » non renommé : "
+            print(f"  ! tab '{titre}' not renamed: "
                   f"{type(erreur).__name__}")
 
 
 def embellir(feuille, entetes: list, derniere: int,
              ligne_entete: int = 1) -> None:
-    """Rend la feuille lisible sans en modifier une seule valeur."""
+    """Makes the sheet readable without changing a single value."""
     for i, nom in enumerate(entetes, start=1):
         cellule = feuille.cell(row=ligne_entete, column=i)
         cellule.font = Font(bold=True, color="FFFFFF")
@@ -230,13 +230,14 @@ def embellir(feuille, entetes: list, derniere: int,
         lettre = get_column_letter(i)
         feuille.column_dimensions[lettre].width = LARGEURS.get(str(nom), 16)
     feuille.row_dimensions[ligne_entete].height = 30
-    # Figer jusqu'a D, pas C : la colonne C porte le LIBELLE, et figer en C
-    # la laisse defiler. On se retrouve alors, des qu'on va voir les prix a
-    # droite, avec des lignes de chiffres sans savoir de quel article il
-    # s'agit — signale par l'utilisateur le 16/09. A, B et C restent visibles.
+    # Freeze up to D, not C: column C carries the LABEL, and freezing at C
+    # leaves it scrolling. As soon as you go and look at the prices on the
+    # right you end up with rows of figures without knowing which item
+    # they belong to (reported by the user on 16/09). A, B and C stay
+    # visible.
     feuille.freeze_panes = f"D{ligne_entete + 1}"
-    # Feuil1 est un tableau Excel : il porte deja son filtre. En poser un
-    # second au niveau de la feuille rend le classeur illisible pour Excel.
+    # Feuil1 is an Excel table: it already carries its own filter. Adding a
+    # second one at sheet level makes the workbook unreadable for Excel.
     if not getattr(feuille, "tables", None):
         feuille.auto_filter.ref = (
             f"A{ligne_entete}:{get_column_letter(len(entetes))}{derniere}")
@@ -263,20 +264,20 @@ def embellir(feuille, entetes: list, derniere: int,
             if nom in index:
                 feuille.cell(row=r, column=index[nom]).number_format = "0.0 %"
 
-        # Une alerte doit se voir : c'est le seul endroit ou l'oeil doit
-        # s'arreter dans un tableau de trois mille lignes.
+        # An alert has to be seen: it is the only place where the eye
+        # should stop in a three-thousand-row table.
         if col_alerte and feuille.cell(row=r, column=col_alerte).value:
             feuille.cell(row=r, column=col_alerte).font = ROUGE
 
 
 def recadrer_tableau(feuille, entetes: list, ligne_entete: int,
                      derniere: int) -> None:
-    """Reajuste le tableau Excel de la feuille sur les donnees reelles.
+    """Realigns the sheet's Excel table onto the real data.
 
-    Feuil1 n'est pas une plage ordinaire : c'est un objet Tableau, qui
-    porte sa propre liste de colonnes et sa propre etendue. Ajouter des
-    lignes ou une colonne sans le lui dire laisse sa definition pointer
-    a cote — et Excel declare le classeur endommage.
+    Feuil1 is not an ordinary range: it is a Table object, carrying its
+    own column list and its own extent. Adding rows or a column without
+    telling it leaves its definition pointing elsewhere, and Excel then
+    declares the workbook damaged.
     """
     from openpyxl.worksheet.table import TableColumn
 
@@ -296,20 +297,20 @@ def recadrer_tableau(feuille, entetes: list, ligne_entete: int,
 
 
 def _pourcent(part: float) -> str:
-    """58,4 % — la virgule et l'espace, comme le reste du classeur."""
+    """58,4 % : comma and space, like the rest of the workbook."""
     return f"{part * 100:.1f} %".replace(".", ",")
 
 
 def ligne_couverture(feuille, entetes: list, derniere: int) -> int:
-    """Insere en tete un cartouche qui dit ou en est le chantier.
+    """Inserts a cover block at the top saying where the work stands.
 
-    Un classeur de trois mille lignes ne dit ni sur quelle population il
-    porte, ni ce qu'il en couvre. Trois lignes : le taux, sa composition,
-    puis la definition du denominateur — parce qu'un pourcentage dont on
-    ignore la population ne veut rien dire, et que le lecteur de ce
-    fichier n'a pas le manifeste du perimetre sous les yeux.
+    A three-thousand-row workbook says neither which population it covers
+    nor how much of it is covered. Three lines: the rate, what it is made
+    of, then the definition of the denominator, because a percentage
+    whose population is unknown means nothing, and the reader of this
+    file does not have the scope manifest in front of them.
 
-    Renvoie le nombre de lignes inserees.
+    Returns the number of rows inserted.
     """
     import perimetre_liste  # noqa: E402
 
@@ -379,19 +380,19 @@ def ligne_couverture(feuille, entetes: list, derniere: int) -> int:
 
 def main() -> None:
     if not CLASSEUR.exists():
-        raise SystemExit(f"Classeur introuvable : {CLASSEUR}")
+        raise SystemExit(f"Workbook not found: {CLASSEUR}")
 
     nouvelles = propositions()
 
-    # On travaille sur une copie lisible : le classeur est souvent ouvert
+    # We work on a readable copy: the workbook is often open
     classeur = load_workbook(chemin_lisible(CLASSEUR))
     feuille = classeur[FEUILLE]
     entetes = [c.value for c in feuille[1]]
-    print(f"classeur : {feuille.max_row - 1} lignes, "
-          f"{len(entetes)} colonnes")
+    print(f"workbook: {feuille.max_row - 1} rows, "
+          f"{len(entetes)} columns")
 
-    # Derniere ligne REELLEMENT remplie : le classeur traine des lignes
-    # vides d'une version anterieure, y ecrire creerait un trou.
+    # Last row ACTUALLY filled: the workbook drags empty rows along from
+    # an earlier version, and writing into them would leave a hole.
     colonne_code = entetes.index("Code article") + 1
     derniere = 1
     deja = set()
@@ -400,25 +401,25 @@ def main() -> None:
         if valeur not in (None, ""):
             derniere = r
             deja.add(str(valeur).strip())
-    print(f"  dernière ligne remplie : {derniere} "
-          f"({len(deja)} codes article distincts)")
+    print(f"  last filled row: {derniere} "
+          f"({len(deja)} distinct item codes)")
 
-    # Garde-fou : ne jamais ajouter un article que le responsable porte deja
+    # Guardrail: never add an item the price owner already carries
     nouvelles["_code"] = nouvelles["Code article"].astype(str).str.strip()
     doublons = nouvelles["_code"].isin(deja)
     if doublons.any():
-        print(f"  {int(doublons.sum())} propositions écartées : "
-              f"l'article est déjà dans le classeur")
+        print(f"  {int(doublons.sum())} proposals dropped: "
+              f"the item is already in the workbook")
         nouvelles = nouvelles[~doublons]
 
-    # Code declinaison, que mes fichiers ne portent pas
+    # Variant code, which my files do not carry
     art = pd.read_excel(chemin_lisible(EXTRACT), dtype=str,
                         usecols=["Code article", "Code déclinaison"])
     pont = art.dropna(subset=["Code article"]).drop_duplicates("Code article")
     decl = dict(zip(pont["Code article"].str.strip(),
                     pont["Code déclinaison"]))
 
-    # Colonne d'origine, ajoutee en fin de tableau
+    # Origin column, added at the end of the table
     if "Origine ligne" in entetes:
         colonne_origine = entetes.index("Origine ligne") + 1
     else:
@@ -427,7 +428,7 @@ def main() -> None:
         for r in range(2, derniere + 1):
             feuille.cell(row=r, column=colonne_origine,
                          value="Responsable prix")
-        print(f"  colonne « Origine ligne » ajoutée en position "
+        print(f"  column 'Origine ligne' added at position "
               f"{colonne_origine}")
 
     ecrites = 0
@@ -452,25 +453,25 @@ def main() -> None:
     dater_les_feuilles_figees(classeur)
 
     entetes_finaux = [c.value for c in feuille[1]]
-    # La ligne de couverture decale tout d'un cran : l'entete passe en 2.
+    # The cover block shifts everything down: the header moves to row 2.
     decale = ligne_couverture(feuille, entetes_finaux, derniere)
     embellir(feuille, entetes_finaux, derniere + decale,
              ligne_entete=1 + decale)
     recadrer_tableau(feuille, entetes_finaux, 1 + decale, derniere + decale)
 
-    # Le classeur de sortie est souvent ouvert dans Excel : plutot que
-    # d'echouer apres tout le calcul, on ecrit a cote sous un nom
-    # horodate, et on le signale.
+    # The output workbook is often open in Excel: rather than failing
+    # after all the computation, we write alongside under a timestamped
+    # name, and say so.
     sortie = mise_en_forme.chemin_ecriture(
         DONNEES / f"prix_valides + propositions "
                   f"{date.today():%Y-%m-%d}.xlsx")
     classeur.save(sortie)
     classeur.close()
 
-    print(f"\n  {ecrites} lignes ajoutées, 0 ligne existante modifiée")
+    print(f"\n  {ecrites} rows added, 0 existing row modified")
     print(f"  -> {sortie}")
-    print("\n  Les propositions se filtrent sur « Origine ligne ».")
-    print("  Rien n'a été écrit dans le classeur d'origine.")
+    print("\n  The proposals are filtered on 'Origine ligne'.")
+    print("  Nothing has been written into the original workbook.")
 
 
 if __name__ == "__main__":

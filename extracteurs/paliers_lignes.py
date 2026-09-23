@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Extracteur des tarifs dont les paliers degressifs sont eclates en LIGNES.
+Extractor for price lists whose volume tiers are spread over ROWS.
 
-Plusieurs fournisseurs publient leur grille ainsi : une ligne par couple
-(reference, quantite), le prix variant d'une ligne a l'autre.
+Several suppliers publish their grid this way: one row per (reference,
+quantity) pair, the price varying from one row to the next.
 
     FOURNISSEUR P   REFERENCE ARTICLE | DESIGNATION    | QUANTITE | PAHT
                     REF0001           | PRODUIT EXEMPLE|        1 | 9.00
@@ -14,18 +14,17 @@ Plusieurs fournisseurs publient leur grille ainsi : une ligne par couple
                     REF0002   | PRODUIT EXEMPLE |  20 | 5.00
                     REF0002   | PRODUIT EXEMPLE |  80 | 4.50
 
-    (references, libelles et montants ci-dessus : valeurs d'exemple)
+    (references, labels and amounts above: sample values)
 
-Le traitement est le meme dans tous les cas : regrouper par reference, la
-plus petite quantite donnant le prix unitaire et les suivantes les paliers.
+The processing is the same in every case: group by reference, the smallest
+quantity giving the unit price and the following ones the tiers.
 
-Deux precautions :
-  - la plus petite quantite publiee n'est pas toujours 1 (le Fournisseur L
-    commence a 20 sur certaines references) : elle devient alors le
-    conditionnement,
-    et le prix reste un prix unitaire ;
-  - a quantite egale, le tarif le plus bas l'emporte, certains fichiers
-    repetant une meme ligne avec des conditions differentes.
+Two precautions:
+  - the smallest published quantity is not always 1 (Supplier L starts at
+    20 on some references): it then becomes the pack size, and the price
+    stays a unit price;
+  - at equal quantity the lowest price wins, since some files repeat the
+    same row with different conditions.
 """
 
 from __future__ import annotations
@@ -50,8 +49,8 @@ from extracteurs.base import (
     valider_paliers,
 )
 
-# Vocabulaire des colonnes, teste sur le debut de l'intitule normalise.
-# L'ordre compte : les intitules les plus longs sont essayes en premier.
+# Column vocabulary, tested against the start of the normalised heading.
+# Order matters: the longest headings are tried first.
 VOCABULAIRE = {
     "ref_fournisseur": [
         "referencearticle", "referencefournisseur", "reference", "ref",
@@ -75,7 +74,7 @@ VOCABULAIRE = {
                     "ecopart", "ecotaxe"],
 }
 
-# Colonnes de prix a ne jamais confondre avec un prix d'achat
+# Price columns never to be mistaken for a purchase price
 PRIX_EXCLUS = ["public", "pvc", "conseille", "ttc", "location", "remise"]
 
 
@@ -88,7 +87,7 @@ def _normaliser(valeur) -> str:
 
 
 def _trouver_entete(brut: pd.DataFrame, max_lignes: int = 20) -> int | None:
-    """Ligne portant a la fois une reference, une designation et un prix."""
+    """The row carrying a reference, a label and a price all at once."""
     for position in range(min(max_lignes, len(brut))):
         cellules = [_normaliser(v) for v in brut.iloc[position].tolist()]
         cellules = [c for c in cellules if c]
@@ -109,7 +108,7 @@ def _trouver_entete(brut: pd.DataFrame, max_lignes: int = 20) -> int | None:
 
 
 def _analyser_colonnes(entetes) -> dict:
-    """Associe chaque champ a un index de colonne."""
+    """Maps each field to a column index."""
     mapping = {}
     for index, entete in enumerate(entetes):
         normalise = _normaliser(entete)
@@ -133,7 +132,7 @@ def _analyser_colonnes(entetes) -> dict:
 
 def extract(path, fournisseur: str | None = None,
             onglet: str | None = None) -> "pd.DataFrame":  # noqa: F821
-    """Extrait un tarif a paliers en lignes vers le schema commun."""
+    """Extracts a row-based tier price list into the common schema."""
     path = Path(path)
     nom = fournisseur or path.parent.name.upper()
 
@@ -143,8 +142,8 @@ def extract(path, fournisseur: str | None = None,
         try:
             classeur = pd.ExcelFile(lisible)
         except Exception:
-            # Certains classeurs portent une feuille de style qu'openpyxl
-            # refuse (Fournisseur BF) : calamine les lit sans broncher.
+            # Some workbooks carry a stylesheet openpyxl refuses
+            # (Supplier BF): calamine reads them without complaint.
             classeur = pd.ExcelFile(lisible, engine="calamine")
         onglets = [onglet] if onglet else classeur.sheet_names
 
@@ -197,9 +196,9 @@ def extract(path, fournisseur: str | None = None,
     for ref, produit in produits.items():
         tarifs = sorted(produit["tarifs"].items())
         quantite_base, prix_unitaire = tarifs[0]
-        # Un tarif qui augmente avec la quantite n'est pas un palier :
-        # le Fournisseur P publie ainsi des variantes plus cheres sur la
-        # meme reference. On ne retient que la degressivite reelle.
+        # A price that rises with quantity is not a tier: Supplier P
+        # publishes more expensive variants under the same reference
+        # this way. Only genuine volume discounts are kept.
         paliers = valider_paliers(prix_unitaire, tarifs[1:])
 
         ligne = {
@@ -226,8 +225,8 @@ def extract(path, fournisseur: str | None = None,
             "prix_coherent": None,
         }
 
-        # Quand le tarif publie un conditionnement, il prime ; sinon la plus
-        # petite quantite tarifee en tient lieu.
+        # When the price list publishes a pack size it wins; otherwise
+        # the smallest quoted quantity stands in for it.
         conditionnement = produit["conditionnement"] or quantite_base
         ligne["conditionnement"], ligne["conditionnement_suppose"] = (
             normaliser_conditionnement(conditionnement)

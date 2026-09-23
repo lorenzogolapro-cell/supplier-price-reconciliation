@@ -1,110 +1,112 @@
 # -*- coding: utf-8 -*-
 """
-Extracteur du tarif du FOURNISSEUR C (PDF, « tarif_fournisseur.pdf »,
+Extractor for the FOURNISSEUR C price list (PDF, "tarif_fournisseur.pdf",
 25 pages).
 
-Appareils de PPC/ventilation, masques, consommables et accessoires. Le PDF a
-une couche texte propre — aucun OCR n'est necessaire.
+CPAP/ventilation devices, masks, consumables and accessories. The PDF has
+a clean text layer, so no OCR is needed.
 
-UNE SEULE COLONNE DE PRIX, ET C'EST LE PRIX D'ACHAT
-    Le document est le tarif nominatif adresse au distributeur. Il ne publie
-    ni prix public, ni prix conseille, ni LPPR : une seule colonne de
-    montants, intitulee « Tarif 2026 HT en Euros » (pages masques et
-    appareils) ou « HT en € » (pages accessoires, en paysage).
+ONE SINGLE PRICE COLUMN, AND IT IS THE PURCHASE PRICE
+    The document is the named price list sent to the distributor. It
+    publishes no list price, no recommended price and no LPPR: one single
+    column of amounts, headed "Tarif 2026 HT en Euros" (mask and device
+    pages) or "HT en €" (accessory pages, in landscape).
 
-    Verification, faite avant d'ecrire la premiere regex : sur les 1 567
-    lignes de la couche texte, UNE SEULE porte deux montants, et c'est un
-    abonnement de service (« 1,00€/semaine soit 4,33€/mois », valeurs
-    d'exemple). Il n'existe donc aucune seconde colonne de prix a confondre
-    avec la premiere — le piege habituel (public HT / public TTC / remise)
-    ne se pose pas ici.
+    Check, made before writing the first regex: out of the 1,567 lines in
+    the text layer, ONE SINGLE line carries two amounts, and it is a
+    service subscription ("1,00€/semaine soit 4,33€/mois", sample
+    values). There is therefore no second price column to confuse with
+    the first: the usual trap (net list price / gross list price /
+    discount) does not arise here.
 
-    Recoupement avec les ordres de grandeur connus du marche : un appareil
-    MODELE EXEMPLE a 600,00 EUR (tarif public constate autour de 900 EUR),
-    un masque MODELE EXEMPLE a 100,00 EUR (public ~ 160 EUR). Ce sont bien
-    des prix d'achat distributeur, pas des prix publics. (montants :
-    valeurs d'exemple)
+    Cross-check against known market orders of magnitude: a MODELE
+    EXEMPLE device at 600.00 EUR (observed retail around 900 EUR), a
+    MODELE EXEMPLE mask at 100.00 EUR (retail ~ 160 EUR). These really
+    are distributor purchase prices, not retail prices. (amounts: sample
+    values)
 
-POURQUOI LA GEOMETRIE ET NON UNE REGEX SUR LE TEXTE
-    Le texte brut de pypdfium2 colle la designation et le prix, et le tarif
-    contient des designations qui FINISSENT par un nombre :
+WHY GEOMETRY RATHER THAN A REGEX OVER THE TEXT
+    The raw text from pypdfium2 runs the label and the price together,
+    and the price list contains labels that END in a number:
 
         K10000  Kit d'alimentation MODELE EXEMPLE 10  500,00 EUR
 
-    Lu en texte, « EXEMPLE 10 500,00 » donne 10 500,00 EUR pour un kit
-    d'alimentation a 500 EUR — un facteur 21 qui passerait le filet du ×10 de
-    pa_completer une fois sur deux. Les abscisses tranchent sans ambiguite :
-    le « 10 » est a x=204, dans la colonne designation, et le prix commence a
-    x=443. On lit donc le PDF avec pdfplumber, par colonnes.
+    Read as text, "EXEMPLE 10 500,00" yields 10,500.00 EUR for a power
+    kit worth 500 EUR: a factor of 21 that would slip through
+    pa_completer's x10 safety net one time in two. The x coordinates
+    settle it without ambiguity: the "10" is at x=204, inside the label
+    column, and the price starts at x=443. So we read the PDF with
+    pdfplumber, by columns.
 
-    Deuxieme raison : sur les pages accessoires, pdfplumber coupe les
-    montants n'importe ou — « 24,00 » sort en deux mots « 2 » puis « 4,00 »,
-    « 413,00 » en « 4 » puis « 13,00 ». Seule la concatenation de TOUT ce qui
-    se trouve dans la colonne de droite reconstitue le nombre.
+    Second reason: on the accessory pages, pdfplumber cuts amounts
+    anywhere it likes. "24,00" comes out as two words, "2" then "4,00",
+    and "413,00" as "4" then "13,00". Only concatenating EVERYTHING found
+    in the right-hand column rebuilds the number.
 
-TROIS MISES EN PAGE DANS LE MEME FICHIER
-    masques (portrait)     : Reference | (A fuite) | Designation | Prix | COMMENTAIRES
-    appareils (portrait)   : Reference | Designation | Prix
-    accessoires (paysage)  : Reference | Designation | 13 colonnes de
-                             compatibilite machine | Prix
+THREE LAYOUTS IN THE SAME FILE
+    masks (portrait)       : Reference | (A fuite) | Label | Price | COMMENTAIRES
+    devices (portrait)     : Reference | Label | Price
+    accessories (landscape): Reference | Label | 13 machine compatibility
+                             columns | Price
 
-    Les bornes ne sont donc pas codees en dur : la colonne de prix est
-    reperee page par page a partir de l'abscisse des symboles « € », qui sont
-    tous alignes. Ce qui se trouve a DROITE du « € » n'est pas un prix mais
-    la colonne COMMENTAIRES (« ARRET DE COMMERCIALISATION 31 MAI 2025 ») :
-    elle part en alerte, jamais en designation.
+    The boundaries are therefore not hard-coded: the price column is
+    located page by page from the x coordinate of the "€" symbols, which
+    are all aligned. What sits to the RIGHT of the "€" is not a price but
+    the COMMENTAIRES column ("ARRET DE COMMERCIALISATION 31 MAI 2025"):
+    it goes out as an alert, never as a label.
 
-    Le symbole n'est pourtant pas toujours la : la page DIVERS n'en porte
-    aucun, et trois blocs de gammes l'omettent ligne a ligne. La colonne se
-    cale alors sur le bord droit des montants — sans quoi une page entiere
-    disparaissait, dont la contrainte mentonniere REF0001, qui est au
-    perimetre.
+    The symbol is not always there, though: the DIVERS page carries none,
+    and three product-range blocks omit it row by row. The column is then
+    aligned on the right edge of the amounts, without which a whole page
+    used to disappear, including the REF0001 chin strap, which is in
+    scope.
 
-    Les croix de compatibilite machine (« x » isolees, entre la designation
-    et le prix) sont retirees : ce ne sont pas des mots de la designation.
+    The machine compatibility crosses (isolated "x" characters, between
+    the label and the price) are stripped out: they are not words of the
+    label.
 
-LES LIGNES SE LISENT SUR PLUSIEURS RANGS
-    Une ligne sur cinq a sa designation sur un rang different de sa
-    reference et de son prix. Trois figures, toutes presentes :
+ROWS ARE READ ACROSS SEVERAL BANDS
+    One row in five has its label on a different band from its reference
+    and its price. Three shapes, all of them present:
 
-        rang 220 : REF0002  x x x x  2 2,00 EUR    prix avant designation
-        rang 221 :        Filtre MODELE EXEMPLE, Std, pack de 12
+        band 220: REF0002  x x x x  2 2,00 EUR    price before label
+        band 221:        Filtre MODELE EXEMPLE, Std, pack de 12
 
-        rang 385 : Systeme de polysomnographie ambulatoire MODELE EXEMPLE
-        rang 391 : REF0003-KA                        15 000,00 EUR
-        rang 397 : chargeur, piles et kit de demarrage Adultes
+        band 385: Systeme de polysomnographie ambulatoire MODELE EXEMPLE
+        band 391: REF0003-KA                        15 000,00 EUR
+        band 397: chargeur, piles et kit de demarrage Adultes
 
-    D'ou le regroupement par proximite verticale (TOLERANCE_RANG) plutot
-    qu'un decoupage en lignes de texte. Le controle d'exhaustivite est
-    simple et il tombe juste : 551 cellules de prix dans le PDF, 551 lignes
-    lues.
+    Hence the grouping by vertical proximity (TOLERANCE_RANG) rather than
+    a split into text lines. The completeness check is simple and it
+    comes out exactly right: 551 price cells in the PDF, 551 rows read.
 
-CE QU'ON NE DIVISE PAS
-    Beaucoup de references sont des lots : « Filtre MODELE EXEMPLE (par 12) »
-    a 15,00 EUR. Ce ne sont pas des conditionnements a diviser mais des
-    REFERENCES DISTINCTES — le meme filtre existe a l'unite (REF0004,
-    1,50 EUR), par 2 (REF0005), par 12 (REF0006), par 50 (REF0007), chacune
-    avec son propre code que le WMS stocke tel quel. Diviser donnerait un
-    prix qu'aucune commande ne pourrait passer. Le lot est donc signale en
-    alerte et le prix reste celui de la reference. (references et montants :
-    valeurs d'exemple)
+WHAT WE DO NOT DIVIDE
+    Many references are lots: "Filtre MODELE EXEMPLE (par 12)" at
+    15.00 EUR. These are not pack sizes to divide by but DISTINCT
+    REFERENCES: the same filter exists as a single unit (REF0004,
+    1.50 EUR), by 2 (REF0005), by 12 (REF0006), by 50 (REF0007), each
+    with its own code, which the WMS stores as is. Dividing would give a
+    price no order could ever be placed at. So the lot is flagged as an
+    alert and the price stays the price of the reference. (references and
+    amounts: sample values)
 
-LES REPETITIONS NE SONT PAS DES DOUBLONS
-    Le meme accessoire est reimprime dans chaque gamme compatible : le clip
-    magnetique REF0008 revient dans huit rubriques, le gabarit REF0009 dans
-    six. 61 des 551 lignes lues sont de cette nature, toujours au meme prix —
-    aucune reference du tarif ne porte deux prix differents, verifie. Elles
-    sont ramenees a une ligne par (reference, prix).
+REPETITIONS ARE NOT DUPLICATES
+    The same accessory is reprinted under every compatible product range:
+    the REF0008 magnetic clip comes back in eight sections, the REF0009
+    template in six. 61 of the 551 rows read are of this kind, always at
+    the same price: no reference in the price list carries two different
+    prices, verified. They are collapsed to one row per (reference,
+    price).
 
-CE QUI EST VOLONTAIREMENT LAISSE DE COTE
-    - Les 5 dernieres pages de produits sont intitulees « References en fin
-      de commercialisation » : aucune colonne de prix, uniquement
-      « Jusqu'a epuisement des stocks ». Rien a extraire.
-    - Les montants a 0,00 EUR (gabarits de mesure offerts, logiciel fourni
-      a « - € ») : un PA a zero injecte dans le WMS est plus dangereux qu'un
-      PA absent. Ils sont comptes, pas retournes.
-    - Les abonnements de service sont cotes « 1€/semaine soit 4,33€/mois » :
-      ce n'est pas un prix unitaire d'article.
+WHAT IS DELIBERATELY LEFT ASIDE
+    - The last 5 product pages are headed "References en fin de
+      commercialisation": no price column at all, only "Jusqu'a
+      epuisement des stocks". Nothing to extract.
+    - Amounts at 0.00 EUR (free measuring templates, software supplied at
+      "- €"): a zero purchase price pushed into the WMS is more dangerous
+      than a missing one. They are counted, not returned.
+    - Service subscriptions are quoted "1€/semaine soit 4,33€/mois":
+      that is not a unit price for an item.
 """
 
 from __future__ import annotations
@@ -119,58 +121,59 @@ from extracteurs.base import chemin_lisible, finaliser, nettoyer_texte
 
 FOURNISSEUR = "FOURNISSEUR C"
 
-# Ecart vertical maximal, en points PDF, entre deux fragments d'une meme
-# ligne de tarif. Le regroupement se fait de proche en proche : quand la
-# designation tient sur deux niveaux, la reference et le prix sont cales
-# ENTRE les deux, et la ligne se lit donc dans cet ordre
+# Maximum vertical gap, in PDF points, between two fragments of the same
+# price list row. Grouping proceeds step by step: when the label spans
+# two levels, the reference and the price sit BETWEEN the two, so the row
+# reads in this order
 #
-#     rang 385   Systeme de polysomnographie ambulatoire MODELE EXEMPLE
-#     rang 391   REF0003-KA                                 15 000,00 EUR
-#     rang 397   chargeur, piles et kit de demarrage Adultes
+#     band 385   Systeme de polysomnographie ambulatoire MODELE EXEMPLE
+#     band 391   REF0003-KA                                 15 000,00 EUR
+#     band 397   chargeur, piles et kit de demarrage Adultes
 #
-# soit des sauts de 6 pt au plus, quand deux lignes de tarif voisines sont
-# toujours a 7 pt au moins (11 pt sur les pages appareils). 6 pt separent
-# donc les deux cas sans jamais les confondre.
+# that is, jumps of 6 pt at most, while two neighbouring price list rows
+# are always at least 7 pt apart (11 pt on the device pages). 6 pt
+# therefore separates the two cases without ever confusing them.
 TOLERANCE_RANG = 6.0
 
-# Abscisse de fin de la colonne « References ». Elle demarre a x=36 sur les
-# pages portrait comme sur les pages paysage ; la designation ne commence
-# jamais avant x=80. La frontiere separe aussi les titres de rubrique
-# (« MASQUES FACIAUX », cales a gauche) des lignes d'article.
+# X coordinate where the "References" column ends. It starts at x=36 on
+# portrait pages as on landscape ones; the label never starts before
+# x=80. This boundary also separates the section titles ("MASQUES
+# FACIAUX", flush left) from the item rows.
 X_FIN_REFERENCES = 70.0
 
-# Distance verticale au-dela de laquelle une mention de la colonne
-# COMMENTAIRES n'est plus rattachee a une ligne : elle porte alors sur toute
-# une rubrique, pas sur un article.
+# Vertical distance beyond which a note from the COMMENTAIRES column is
+# no longer attached to a row: it then applies to a whole section, not to
+# a single item.
 ECART_COMMENTAIRE = 8.0
 
-# Abscisse a partir de laquelle commencent les colonnes de compatibilite
-# machine des pages accessoires (une colonne par gamme compatible), cochees
-# par un « x » minuscule isole. La premiere est a x=243, la designation la
-# plus longue s'arrete a x=231 : 230 separe les deux sans les confondre.
+# X coordinate where the machine compatibility columns of the accessory
+# pages begin (one column per compatible range), ticked with an isolated
+# lower-case "x". The first is at x=243, the longest label stops at
+# x=231: 230 separates the two without confusing them.
 #
-# La condition d'abscisse n'est pas un luxe. Un filtre pose sur le seul
-# caractere effacait le « X » de « Coussins narinaires - X Small » (REF0010),
-# qui devenait le jumeau exact du Small (REF0011) — deux articles distincts
-# rendus indiscernables par le libelle.
+# The coordinate condition is not a luxury. A filter based on the
+# character alone erased the "X" from "Coussins narinaires - X Small"
+# (REF0010), which then became the exact twin of the Small (REF0011):
+# two distinct items made indistinguishable by their label.
 X_DEBUT_COMPATIBILITE = 230.0
 
-# Largeur maximale d'une cellule de prix, en points. Sert a remonter depuis
-# le « € » jusqu'au premier chiffre du montant : « 16 000,00 » (valeur d'exemple) occupe
-# 38 pt, on prend 45 pt de marge. Au-dela commencerait la colonne precedente.
+# Maximum width of a price cell, in points. Used to walk back from the
+# "€" to the first digit of the amount: "16 000,00" (sample value) takes
+# up 38 pt, so 45 pt is taken as the margin. Beyond that the previous
+# column would start.
 LARGEUR_CELLULE_PRIX = 45.0
 
-# Une reference du FOURNISSEUR C : 12345, 12345-KB, 10000001, R100-200,
-# K10000, 27000K, 7000001-PK12, 7000002-3 (valeurs d'exemple). Au moins
-# trois chiffres — c'est ce qui distingue une reference d'un titre de
-# rubrique commencant par un chiffre (« 2 NIVEAUX DE PRESSION ») ou d'un
-# abonnement (« ABOEXEMPLE01 »).
+# A FOURNISSEUR C reference: 12345, 12345-KB, 10000001, R100-200, K10000,
+# 27000K, 7000001-PK12, 7000002-3 (sample values). At least three digits:
+# that is what tells a reference from a section title starting with a
+# digit ("2 NIVEAUX DE PRESSION") or from a subscription
+# ("ABOEXEMPLE01").
 REFERENCE = re.compile(r"^[A-Z]{0,4}\d[A-Z0-9]*(?:[-/][A-Z0-9]+)*$")
 
-# Montant reconstitue apres recollage des morceaux de la colonne de droite.
+# Amount rebuilt after gluing back the fragments of the right column.
 MONTANT = re.compile(r"^\d{1,6},\d{2}$")
 
-# Rangs a ignorer : en-tetes repetes en haut de chaque page et pied de page.
+# Bands to ignore: headers repeated at the top of each page, and footers.
 BRUIT = re.compile(
     r"Internal Use|R[ée]f[ée]rences\s+D[ée]signation|COMMENTAIRES"
     r"|TARIFS? (MASQUES|APPAREILS|ACCESSOIRES)|en Euros|Tarif 2026 HT"
@@ -178,8 +181,8 @@ BRUIT = re.compile(
     re.IGNORECASE,
 )
 
-# Lots vendus sous une reference propre : « (par 12) », « pack de 50 »,
-# « (x12) », « (25) ». Sert uniquement a poser une alerte — voir le docstring.
+# Lots sold under their own reference: "(par 12)", "pack de 50", "(x12)",
+# "(25)". Only used to raise an alert, see the module docstring.
 LOT = re.compile(
     r"\(\s*par\s+(\d+)\s*\)|pack\s+de\s+(\d+)|\(\s*x\s*(\d+)\s*\)|\(\s*(\d{2,})\s*\)",
     re.IGNORECASE,
@@ -191,18 +194,18 @@ def _mot_texte(mot) -> str:
 
 
 def _rangs(mots: list[dict]) -> list[list[dict]]:
-    """Regroupe les mots d'une page en rangs visuels.
+    """Groups the words of a page into visual bands.
 
-    pdfplumber rend les mots dans le desordre : on trie par ordonnee puis on
-    chaine tant que l'ecart reste sous TOLERANCE_RANG.
+    pdfplumber returns words out of order: we sort by y coordinate, then
+    chain them as long as the gap stays below TOLERANCE_RANG.
     """
     rangs: list[list[dict]] = []
     courant: list[dict] = []
     precedente = None
     for mot in sorted(mots, key=lambda m: (m["top"], m["x0"])):
-        # Le chainage se fait sur l'ordonnee du mot PRECEDENT, pas sur celle
-        # du premier mot du rang : une ligne a deux niveaux progresse par
-        # sauts de 4 pt et s'etale sur 8 pt au total.
+        # Chaining uses the y coordinate of the PREVIOUS word, not that of
+        # the first word of the band: a two-level row advances in 4 pt
+        # steps and spreads over 8 pt in total.
         if precedente is not None and mot["top"] - precedente > TOLERANCE_RANG:
             rangs.append(courant)
             courant = []
@@ -214,41 +217,40 @@ def _rangs(mots: list[dict]) -> list[list[dict]]:
 
 
 def _colonne_prix(mots: list[dict]) -> tuple[float, float] | None:
-    """Bornes (gauche, droite) de la colonne de prix de la page.
+    """Bounds (left, right) of the page's price column.
 
-    Les symboles « € » sont tous alignes sur la meme abscisse ; le montant
-    est cale a leur gauche, le commentaire eventuel a leur droite. On prend
-    leur MEDIANE et non leur minimum : l'en-tete des pages accessoires
-    contient lui aussi un « € », 12 points plus a gauche que la colonne, et
-    il decalerait la frontiere jusque dans les croix de compatibilite.
+    The "€" symbols are all aligned on the same x coordinate; the amount
+    is set to their left, any comment to their right. We take their
+    MEDIAN and not their minimum: the header of the accessory pages also
+    contains a "€", 12 points further left than the column, and it would
+    shift the boundary right into the compatibility crosses.
 
-    Toutes les pages ne portent pas le symbole : la page DIVERS n'en a aucun
-    et trois blocs de gammes l'omettent ligne a ligne.
-    A defaut, la colonne est calee sur le bord DROIT des montants, qui est
-    exactement la ou se tiendrait le symbole. Sans ce recours, une page
-    entiere disparaissait — dont la contrainte mentonniere REF0001, qui est
-    au perimetre.
+    Not every page carries the symbol: the DIVERS page has none, and
+    three product-range blocks omit it row by row. Failing that, the
+    column is aligned on the RIGHT edge of the amounts, which is exactly
+    where the symbol would stand. Without that fallback a whole page used
+    to disappear, including the REF0001 chin strap, which is in scope.
 
-    Renvoie None sur une page sans le moindre montant (« References en fin
-    de commercialisation », conditions generales de vente).
+    Returns None on a page without a single amount ("References en fin de
+    commercialisation", terms and conditions of sale).
     """
     abscisses = sorted(m["x0"] for m in mots if _mot_texte(m) == "€")
     if not abscisses:
         bords = sorted(m["x1"] for m in mots if MONTANT.match(_mot_texte(m)))
         if not bords:
             return None
-        # Le symbole manquant se poserait deux points apres le montant.
+        # The missing symbol would sit two points after the amount.
         abscisses = [bords[len(bords) // 2] + 2.0]
     mediane = abscisses[len(abscisses) // 2]
     return mediane - LARGEUR_CELLULE_PRIX, mediane + 10.0
 
 
 def _intitule(page_texte: str) -> str:
-    """Intitule EXACT de la colonne de prix, tel qu'il est imprime.
+    """EXACT heading of the price column, as it is printed.
 
-    Deux mises en page, deux libelles : les pages accessoires (paysage)
-    abregent en « HT en € » la ou les pages masques et appareils ecrivent
-    « Tarif 2026 HT en Euros ».
+    Two layouts, two wordings: the accessory pages (landscape) shorten it
+    to "HT en €" where the mask and device pages write "Tarif 2026 HT en
+    Euros". Both are returned verbatim, they go into colonne_prix.
     """
     if "TARIF ACCESSOIRES APPAREILS 2026" in page_texte:
         return "HT en €"
@@ -256,12 +258,12 @@ def _intitule(page_texte: str) -> str:
 
 
 def _decouper(rang: list[dict], bornes: tuple[float, float]) -> dict:
-    """Range les mots d'un rang dans les trois zones de la grille."""
+    """Sorts the words of a band into the three zones of the grid."""
     gauche, _ = bornes
     zone = {"reference": [], "designation": [], "prix": []}
-    # Tri par ordonnee PUIS abscisse : une designation sur deux niveaux se
-    # lit de haut en bas, pas de gauche a droite ; ses deux morceaux
-    # commencent a la meme abscisse.
+    # Sort by y THEN by x: a label spread over two levels reads top to
+    # bottom, not left to right; its two fragments start at the same x
+    # coordinate.
     for mot in sorted(rang, key=lambda m: (m["top"], m["x0"])):
         texte = _mot_texte(mot)
         if not texte:
@@ -272,21 +274,21 @@ def _decouper(rang: list[dict], bornes: tuple[float, float]) -> dict:
         elif mot["x0"] < X_FIN_REFERENCES:
             zone["reference"].append(texte)
         elif not (texte == "x" and mot["x0"] >= X_DEBUT_COMPATIBILITE):
-            # Un « x » minuscule isole, passe la designation, est une croix
-            # de compatibilite machine et non un mot du libelle.
+            # An isolated lower-case "x", past the label, is a machine
+            # compatibility cross and not a word of the label.
             zone["designation"].append(texte)
     return zone
 
 
 def _commentaires(mots: list[dict], droite: float) -> list[tuple[float, str]]:
-    """Colonne COMMENTAIRES des pages masques, par ordonnee.
+    """COMMENTAIRES column of the mask pages, by y coordinate.
 
-    Elle est a DROITE du prix et n'est pas alignee sur les lignes : une
-    mention « ARRET DE COMMERCIALISATION 31 MAI 2025 » se pose a mi-hauteur
-    entre deux articles, a 4 points de chacun. La laisser dans le
-    regroupement des rangs souderait les deux lignes voisines en une seule
-    et ferait disparaitre un article sur deux. Elle est donc mise de cote
-    ici, puis rattachee a la ligne la plus proche.
+    It sits to the RIGHT of the price and is not aligned on the rows: a
+    note such as "ARRET DE COMMERCIALISATION 31 MAI 2025" lands halfway
+    between two items, 4 points from each. Leaving it in the band
+    grouping would weld the two neighbouring rows into one and make every
+    other item disappear. So it is set aside here, then attached to the
+    nearest row.
     """
     groupes: dict[float, list[dict]] = {}
     for mot in mots:
@@ -301,11 +303,11 @@ def _commentaires(mots: list[dict], droite: float) -> list[tuple[float, str]]:
 
 
 def _montant(morceaux: list[str]) -> float | None:
-    """Recolle les morceaux de la colonne de droite en un montant.
+    """Glues the fragments of the right column back into an amount.
 
-    Sur les pages accessoires, « 24,00 » arrive en deux mots (« 2 », « 4,00 »)
-    et « 413,00 » en « 4 » + « 13,00 » : on concatene sans espace, sinon le
-    montant est ampute de son chiffre de tete.
+    On the accessory pages, "24,00" arrives as two words ("2", "4,00")
+    and "413,00" as "4" + "13,00": we concatenate without a space,
+    otherwise the amount loses its leading digit.
     """
     brut = "".join(morceaux).replace(" ", "").replace(" ", "").replace(" ", "")
     if not MONTANT.match(brut):
@@ -320,7 +322,7 @@ def _lot(designation: str) -> int | None:
     for valeur in trouve.groups():
         if valeur:
             quantite = int(valeur)
-            # « (25x10mm) » et autres cotes ne sont pas des lots.
+            # "(25x10mm)" and other dimensions are not lots.
             return quantite if 1 < quantite <= 500 else None
     return None
 
@@ -335,9 +337,9 @@ def extract(path) -> pd.DataFrame:
     brutes: list[dict] = []
     sans_prix = 0
     a_zero = 0
-    # Dernier titre de rubrique rencontre. Une poignee de lignes ont leur
-    # cellule designation vide : le tarif se contente alors du titre juste
-    # au-dessus (REF0012 sous « Tuyau avec bague de fuite MODELE EXEMPLE »).
+    # Last section title seen. A handful of rows have an empty label
+    # cell: the price list then makes do with the title just above
+    # (REF0012 under "Tuyau avec bague de fuite MODELE EXEMPLE").
     rubrique: str | None = None
 
     with pdfplumber.open(str(chemin_lisible(chemin))) as pdf:
@@ -354,9 +356,9 @@ def extract(path) -> pd.DataFrame:
             for rang in _rangs(grille):
                 texte_rang = " ".join(_mot_texte(m) for m in rang)
                 if BRUIT.search(texte_rang):
-                    # Un en-tete ferme la ligne en cours, il ne l'annule pas :
-                    # la derniere ligne d'une page se trouve juste au-dessus
-                    # du pied de page et serait perdue sans cette ecriture.
+                    # A header closes the current row, it does not cancel
+                    # it: the last row of a page sits just above the
+                    # footer and would be lost without this.
                     if courante:
                         lignes_page.append(courante)
                     courante = None
@@ -369,11 +371,11 @@ def extract(path) -> pd.DataFrame:
                     None,
                 )
 
-                # Un titre de rubrique est cale a gauche, dans la colonne des
-                # references, mais il DEBORDE sur la colonne designation
-                # (« Kit Bulle MODELE EXEMPLE F40 » court de x=37 a x=96). Le
-                # reconnaitre a sa seule abscisse de depart evite de coller
-                # « F40 » a la fin de la designation de la ligne precedente.
+                # A section title is flush left, in the reference column,
+                # but it SPILLS OVER into the label column ("Kit Bulle
+                # MODELE EXEMPLE F40" runs from x=37 to x=96). Detecting
+                # it from its starting x alone avoids sticking "F40" onto
+                # the end of the previous row's label.
                 debut = min(m["x0"] for m in rang)
                 if reference is None and debut < X_FIN_REFERENCES:
                     rubrique = nettoyer_texte(texte_rang)
@@ -392,15 +394,15 @@ def extract(path) -> pd.DataFrame:
                         "commentaire": [],
                         "colonne_prix": intitule,
                         "rubrique": rubrique,
-                        # Ordonnee de la ligne, pour y raccrocher son
-                        # commentaire une fois la page entiere lue.
+                        # y coordinate of the row, so its comment can be
+                        # hooked back on once the whole page is read.
                         "y": min(m["top"] for m in rang),
                     }
                     continue
 
                 if courante is None:
                     continue
-                # Rang sans reference : suite de la ligne precedente.
+                # Band with no reference: continuation of the previous row.
                 courante["designation"] += zone["designation"]
                 courante["prix"] += zone["prix"]
 
@@ -424,8 +426,8 @@ def extract(path) -> pd.DataFrame:
             sans_prix += 1
             continue
         if prix == 0:
-            # Gabarits offerts, logiciel a « - € » : un PA nul injecte dans
-            # le WMS serait pris pour un vrai prix.
+            # Free templates, software at "- €": a zero purchase price
+            # pushed into the WMS would be taken for a real one.
             a_zero += 1
             continue
 
@@ -454,10 +456,11 @@ def extract(path) -> pd.DataFrame:
             "alerte": " | ".join(alertes) or None,
         })
 
-    # Le tarif repete une meme reference dans chaque gamme compatible : le
-    # clip REF0008 revient dans huit rubriques. On ne garde qu'une ligne par
-    # (reference, prix) — et si une reference porte deux prix differents,
-    # les deux sortent, signalees, plutot qu'un arbitrage silencieux.
+    # The price list repeats the same reference under every compatible
+    # range: the REF0008 clip comes back in eight sections. Only one row
+    # per (reference, price) is kept, and if a reference carries two
+    # different prices, both go out flagged rather than being silently
+    # arbitrated.
     par_reference = defaultdict(set)
     for ligne in lignes:
         par_reference[ligne["ref_fournisseur"]].add(ligne["prix_achat_unitaire_ht"])
@@ -478,9 +481,9 @@ def extract(path) -> pd.DataFrame:
             )
         retenues.append(ligne)
 
-    print(f"    {len(retenues)} lignes retenues sur {len(lignes)} lues "
-          f"({len(lignes) - len(retenues)} repetitions d'une gamme a l'autre), "
-          f"{sans_prix} sans prix, {a_zero} a 0,00 EUR")
+    print(f"    {len(retenues)} rows kept out of {len(lignes)} read "
+          f"({len(lignes) - len(retenues)} repeats from one range to the "
+          f"next), {sans_prix} with no price, {a_zero} at 0.00 EUR")
     return finaliser(retenues)
 
 
@@ -494,10 +497,10 @@ if __name__ == "__main__":
     pd.set_option("display.width", 220)
     pd.set_option("display.max_colwidth", 70)
     pd.set_option("display.max_rows", 400)
-    print(f"{len(table)} lignes extraites de {cible.name}")
+    print(f"{len(table)} rows extracted from {cible.name}")
     if not table.empty:
         prix = table["prix_achat_unitaire_ht"]
-        print(f"prix : min {prix.min():.2f} / median {prix.median():.2f} / "
+        print(f"price: min {prix.min():.2f} / median {prix.median():.2f} / "
               f"max {prix.max():.2f} EUR")
         colonnes = ["ref_fournisseur", "designation", "prix_achat_unitaire_ht",
                     "colonne_prix"]

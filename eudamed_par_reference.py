@@ -1,41 +1,41 @@
 # -*- coding: utf-8 -*-
 """
-Interroge EUDAMED reference par reference, en tache de fond.
+Queries EUDAMED reference by reference, in the background.
 
-    python eudamed_par_reference.py            reprend ou il s'etait arrete
-    python eudamed_par_reference.py --etat     ou en est-on ?
-    python eudamed_par_reference.py --refaire  repart de zero
+    python eudamed_par_reference.py            resumes where it stopped
+    python eudamed_par_reference.py --etat     where do we stand?
+    python eudamed_par_reference.py --refaire  starts over
 
-Sortie : wms_extracts/.cache_eudamed_ref/resultats.json
-         sortie/2-chantier-ean/ean_eudamed_reference.xlsx
+Output: wms_extracts/.cache_eudamed_ref/resultats.json
+        sortie/2-chantier-ean/ean_eudamed_reference.xlsx
 
-Pourquoi par reference
-----------------------
-Toute la collecte precedente passait par le SRN du fabricant, qu'il faut
-connaitre — nous n'en avons que huit. Or l'API accepte aussi un filtre
-`reference`, verifie en correspondance exacte : on peut donc interroger
-n'importe quel fournisseur, sans SRN, sur les references qui nous
-manquent.
+Why by reference
+----------------
+The whole previous collection went through the manufacturer's SRN, which
+has to be known, and we only have eight of them. But the API also
+accepts a `reference` filter, checked as an exact match: we can
+therefore query any supplier at all, with no SRN, on the references we
+are missing.
 
-Le throttling, et comment on vit avec
---------------------------------------
-EUDAMED limite silencieusement : passe environ trois appels par minute,
-il repond HTTP 200 avec zero resultat au lieu d'un 429. Un echec est donc
-indiscernable d'une absence — c'est ce qui a fige 248 caches vides qu'on
-ne rejouera jamais.
+Throttling, and how we live with it
+-----------------------------------
+EUDAMED throttles silently: past roughly three calls a minute, it
+answers HTTP 200 with zero results instead of a 429. A failure is
+therefore indistinguishable from an absence, and that is what froze 248
+empty caches we will never replay.
 
-Deux precautions :
-  - une pause d'une minute entre deux appels, cadence a laquelle aucun
-    echec n'a ete observe ;
-  - un resultat vide n'est PAS considere comme definitif : la reference
-    est reessayee jusqu'a REESSAIS fois, a des moments differents. Ce
-    n'est qu'apres cela qu'on conclut a l'absence.
+Two precautions:
+  - a one minute pause between two calls, the rate at which no failure
+    has been observed;
+  - an empty result is NOT taken as final: the reference is retried up
+    to REESSAIS times, at different moments. Only after that do we
+    conclude it is absent.
 
-Reprise apres coupure
----------------------
-L'etat est enregistre apres chaque appel. Une coupure de courant coute au
-plus une reference. Le script peut etre relance autant de fois que
-necessaire : il reprend la ou il en etait.
+Resuming after an interruption
+------------------------------
+The state is saved after every call. A power cut costs at most one
+reference. The script can be relaunched as many times as needed: it
+picks up where it left off.
 """
 
 from __future__ import annotations
@@ -71,51 +71,51 @@ ENTETES = {
 CACHE = WMS_EXTRACTS / ".cache_eudamed_ref"
 ETAT = CACHE / "resultats.json"
 
-# Une minute entre deux appels : cadence a laquelle aucun echec silencieux
-# n'a ete observe. En dessous, l'API repond 200 avec zero resultat.
+# One minute between two calls: the rate at which no silent failure has
+# been observed. Below that, the API answers 200 with zero results.
 PAUSE = 60
-# On varie un peu pour ne pas taper a la seconde pres
+# We vary it slightly so as not to hit on the exact second
 JITTER = 12
 
-# Combien de fois insister sur une reference restee vide.
+# How many times to insist on a reference that came back empty.
 #
-# Le reglage etait a 3, par crainte du throttling silencieux. Mesure le
-# 04/09 sur 1 195 references, l'hypothese ne tient pas :
+# The setting was 3, out of fear of silent throttling. Measured on 04/09
+# over 1 195 references, the hypothesis does not hold:
 #
-#     1er essai   494 references   318 trouvees   64 %
-#     2e essai    620 references    15 trouvees   2,4 %
-#     3e essai     45 references     2 trouvees   4,4 %
+#     1st attempt  494 references   318 found   64 %
+#     2nd attempt  620 references    15 found   2.4 %
+#     3rd attempt   45 references     2 found   4.4 %
 #
-# Un vide au premier appel est donc une VRAIE absence, pas un refus
-# deguise — a une minute par appel, EUDAMED ne nous freine pas. Insister
-# coutait treize heures pour une vingtaine de codes, pendant que des
-# milliers de references n'avaient jamais ete interrogees une seule fois
-# et avaient, elles, deux chances sur trois d'aboutir.
+# An empty first call is therefore a REAL absence, not a disguised
+# refusal: at one call a minute, EUDAMED does not slow us down.
+# Insisting cost thirteen hours for about twenty codes, while thousands
+# of references had never been queried even once and had, for their
+# part, two chances out of three of succeeding.
 #
-# On epuise donc les premiers essais d'abord. Un second passage se
-# decidera apres, sur les absences confirmees, quand EUDAMED se sera
-# rempli — la reglementation est d'application echelonnee.
+# So we exhaust the first attempts first. A second pass will be decided
+# afterwards, on the confirmed absences, once EUDAMED has filled up: the
+# regulation applies in stages.
 REESSAIS = 1
 
 TIMEOUT = 90
 
 
 def _empecher_la_veille() -> bool:
-    """Demande a Windows de ne pas s'endormir tant qu'on travaille.
+    """Asks Windows not to fall asleep while we are working.
 
-    La collecte dure des jours. Le poste, lui, se met en veille au bout
-    de quelques dizaines de minutes d'inactivite — et une collecte qui
-    n'utilise ni clavier ni souris compte comme de l'inactivite. On perd
-    alors toute la nuit, et il faut attendre l'ouverture de session du
-    lendemain pour que le lanceur reprenne.
+    The collection runs for days. The machine, however, goes to sleep
+    after a few dozen minutes of inactivity, and a collection that uses
+    neither keyboard nor mouse counts as inactivity. We then lose the
+    whole night, and we have to wait for the next day's logon before the
+    launcher resumes.
 
-    `SetThreadExecutionState` regle cela sans aucun droit particulier :
-    le processus declare que le systeme doit rester eveille. On ne
-    demande PAS ES_DISPLAY_REQUIRED — l'ecran peut s'eteindre, il ne
-    sert a rien ici, et le laisser allume userait la dalle pour rien.
+    `SetThreadExecutionState` settles this without any special rights:
+    the process declares that the system must stay awake. We do NOT ask
+    for ES_DISPLAY_REQUIRED: the screen can go off, it is of no use here,
+    and leaving it on would wear the panel for nothing.
 
-    L'effet cesse de lui-meme quand le processus se termine : rien a
-    defaire, rien qui reste accroche si la collecte est tuee.
+    The effect ends by itself when the process terminates: nothing to
+    undo, nothing left hanging if the collection is killed.
     """
     if sys.platform != "win32":
         return False
@@ -127,8 +127,8 @@ def _empecher_la_veille() -> bool:
             ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
         return bool(resultat)
     except Exception:
-        # Une politique de domaine peut le refuser : ce n'est pas une
-        # raison d'interrompre la collecte, seulement de le signaler.
+        # A domain policy may refuse it: that is no reason to stop the
+        # collection, only to say so.
         return False
 
 
@@ -154,56 +154,56 @@ COLONNES_ARTICLE = ["Code article", "Réf. fournisseur", "Désignation",
 
 
 def _tous_les_articles() -> pd.DataFrame:
-    """Tous les articles portant une reference fournisseur.
+    """Every article carrying a supplier reference.
 
-    Deux usages, et il ne faut pas les confondre : cette table sert a
-    NOMMER les articles quand on ecrit le classeur des trouvailles.
-    `_a_chercher` en tire ensuite ce qui reste a interroger.
+    Two uses, and they must not be confused: this table is here to NAME
+    the articles when the workbook of findings is written. `_a_chercher`
+    then derives from it what is left to query.
     """
     fichier = mise_en_forme.derniere_version(SORTIE_CHANTIER,
                                              "EAN distributeur.xlsx")
     if fichier is None:
-        raise SystemExit("Lancez d'abord : python ean_global.py")
+        raise SystemExit("Run first: python ean_global.py")
     df = pd.read_excel(chemin_lisible(fichier), sheet_name="Codes EAN",
                        skiprows=3, dtype=str)
     return df[df["Code article"].notna() & df["Réf. fournisseur"].notna()]
 
 
-# Une reference exploitable par EUDAMED : chiffres, espaces et points de
-# separation. « 25 105 00 » et « 72.700 » passent, « ALPHA2_MO_T15 »
-# non.
+# A reference EUDAMED can work with: digits, spaces and separating dots.
+# "25 105 00" and "72.700" pass, "ALPHA2_MO_T15" does not.
 REFERENCE_NUMERIQUE = re.compile(r"[\d\s.]{4,}")
 
 
 def _interrogeable(article: dict) -> bool:
-    """Cette reference a-t-elle une chance d'etre connue d'EUDAMED ?
+    """Does this reference stand a chance of being known to EUDAMED?
 
-    La question ne se pose que pour les references tirees de la colonne
-    « Référence fabricant » du WMS, ouverte en repli quand celle du
-    fournisseur manque. Cette colonne melange de vraies references
-    catalogue et des codes de configuration maison.
+    The question only arises for references taken from the WMS
+    "Référence fabricant" column, opened as a fallback when the
+    supplier's one is missing. That column mixes genuine catalogue
+    references with in-house configuration codes.
 
-    Deux pilotes de 25 appels reels l'ont mesure :
+    Two pilots of 25 real calls measured it:
 
-        references numeriques      12 succes sur 38   32 %
-        references alphanumeriques  0 succes sur 12    0 %
+        numeric references         12 hits out of 38   32 %
+        alphanumeric references     0 hits out of 12    0 %
 
-    « KIT_ASM_RLV01 », « GAMME MS-BASE », « ALPHA2_MO_T15 » :
-    aucun fabricant ne declare un dispositif sous ce genre de chaine.
-    Les interroger couterait 27 heures pour rien.
+    "KIT_ASM_RLV01", "GAMME MS-BASE", "ALPHA2_MO_T15": no manufacturer
+    declares a device under that kind of string. Querying them would cost
+    27 hours for nothing.
 
-    La reference FOURNISSEUR, elle, passe sans condition : elle rend
-    27,6 % quelle que soit sa forme, mesure sur 3 658 appels.
+    The SUPPLIER reference, on the other hand, passes unconditionally: it
+    returns something 27.6 % of the time whatever its shape, measured
+    over 3 658 calls.
 
-    Une condition s'y ajoute depuis le 11/09/2026, et elle vaut pour les
-    DEUX colonnes : la reference doit faire au moins
-    `eudamed_fiabilite.LONGUEUR_MINIMALE` caracteres. « Rendre 27,6 % »
-    ne voulait pas dire « rendre juste » : la mesure comptait les appels
-    qui ramenaient QUELQUE CHOSE, pas ceux qui ramenaient le bon
-    dispositif. Confrontes au prefixe GS1 du fournisseur, les codes tires
-    d'une reference courte tombent a 15 % de concordance, contre 96 %
-    au-dela de neuf caracteres. Les interroger ne coute pas seulement du
-    temps : cela produit du faux qu'il faut ensuite defaire.
+    One more condition applies since 11/09/2026, and it holds for BOTH
+    columns: the reference must be at least
+    `eudamed_fiabilite.LONGUEUR_MINIMALE` characters long. "Returning
+    27.6 %" did not mean "returning the right thing": the measurement
+    counted the calls that brought back SOMETHING, not those that brought
+    back the right device. Confronted with the supplier's GS1 prefix,
+    codes drawn from a short reference fall to 15 % agreement, against
+    96 % beyond nine characters. Querying them does not only cost time:
+    it produces falsehoods that then have to be undone.
     """
     reference = str(article.get("Réf. fournisseur") or "").strip()
     if not eudamed_fiabilite.reference_fiable(reference):
@@ -214,11 +214,11 @@ def _interrogeable(article: dict) -> bool:
 
 
 def _a_chercher(tous: pd.DataFrame | None = None) -> list[dict]:
-    """Nos manques ayant une reference exploitable, actifs d'abord."""
+    """Our gaps that have a usable reference, active articles first."""
     df = _tous_les_articles() if tous is None else tous
     df = df[df["Code EAN"].isna()]
-    # Les articles qui tournent passent en premier : si la collecte
-    # s'arrete en route, c'est eux qu'on aura documentes.
+    # The articles that actually move go first: if the collection stops
+    # part way, they are the ones we will have documented.
     df = df.sort_values("Actif", ascending=False)
 
     colonnes = COLONNES_ARTICLE + (
@@ -227,13 +227,13 @@ def _a_chercher(tous: pd.DataFrame | None = None) -> list[dict]:
     retenus = [a for a in articles if _interrogeable(a)]
     ecartes = len(articles) - len(retenus)
     if ecartes:
-        print(f"{ecartes} références fabricant alphanumériques écartées "
-              f"— mesuré à 0 % de rendement")
+        print(f"{ecartes} alphanumeric manufacturer references discarded, "
+              f"measured at a 0 % hit rate")
     return retenus
 
 
 def _interroger(reference: str) -> tuple[str | None, str]:
-    """(EAN, statut) pour une reference. statut : trouve / absent / echec."""
+    """(EAN, status) for one reference. status: trouve / absent / echec."""
     try:
         reponse = requests.get(
             URL, headers=ENTETES, timeout=TIMEOUT,
@@ -249,7 +249,7 @@ def _interroger(reference: str) -> tuple[str | None, str]:
 
     donnees = reponse.json()
     total = donnees.get("totalElements", 0)
-    # Un total demesure signale un filtre ignore, pas un resultat
+    # An outsized total signals an ignored filter, not a result
     if total > 100_000:
         return None, "echec"
     if not total:
@@ -265,23 +265,23 @@ def _interroger(reference: str) -> tuple[str | None, str]:
             continue
         if ean_est_valide(candidat):
             return candidat, "trouve"
-    # Des dispositifs existent mais aucun code d'unite de vente
+    # Devices do exist, but none of them has a sales unit code
     return None, "absent"
 
 
 def _ecrire_resultats(etat: dict, tous: pd.DataFrame) -> None:
-    """Classeur des codes trouves, pret a etre repris.
+    """Workbook of the codes found, ready to be picked up.
 
-    Ecrit d'apres TOUS les articles, jamais d'apres la liste de ce qui
-    reste a chercher. La nuance a coute 221 codes : cette liste ne
-    contient que les articles SANS code, or un article qu'EUDAMED vient
-    de documenter n'en fait plus partie au passage suivant. Son code
-    disparaissait donc du classeur, `ean_global` ne le voyait plus, et
-    l'article se retrouvait de nouveau sans code — puis de nouveau dans
-    la file. La collecte effacait ses propres trouvailles.
+    Written from ALL the articles, never from the list of what is left to
+    look for. The distinction cost 221 codes: that list only holds the
+    articles WITHOUT a code, and an article EUDAMED has just documented
+    is no longer part of it on the next pass. Its code therefore
+    disappeared from the workbook, `ean_global` no longer saw it, and the
+    article found itself without a code again, then back in the queue.
+    The collection was erasing its own findings.
 
-    Une reference peut nommer plusieurs de nos articles : le code vaut
-    alors pour chacun d'eux, et chacun recoit sa ligne.
+    One reference can name several of our articles: the code then holds
+    for each of them, and each one gets its row.
     """
     par_reference: dict[str, list[dict]] = {}
     for article in tous[COLONNES_ARTICLE].to_dict("records"):
@@ -338,10 +338,10 @@ def etat_courant() -> None:
                 if etat.get(a["Réf. fournisseur"], {}).get("essais", 0)
                 < REESSAIS and not etat.get(a["Réf. fournisseur"],
                                             {}).get("ean")]
-    print(f"  {len(articles)} références à documenter")
-    print(f"  {trouves} trouvées | {absents} absentes (confirmé) | "
-          f"{a_reessayer} à réessayer")
-    print(f"  reste {len(restants)} appels, soit environ "
+    print(f"  {len(articles)} references to document")
+    print(f"  {trouves} found | {absents} absent (confirmed) | "
+          f"{a_reessayer} to retry")
+    print(f"  {len(restants)} calls left, i.e. roughly "
           f"{len(restants) * PAUSE / 3600:.0f} h")
 
 
@@ -353,26 +353,26 @@ def main() -> None:
         return
 
     if _empecher_la_veille():
-        print("veille système désactivée le temps de la collecte "
-              "(l'écran peut s'éteindre)")
+        print("system sleep disabled for the duration of the collection "
+              "(the screen may go off)")
     else:
-        print("! la mise en veille n'a pas pu être empêchée : une nuit de "
-              "collecte peut être perdue si le poste s'endort")
+        print("! sleep could not be prevented: a night of collection may "
+              "be lost if the machine falls asleep")
 
     etat = _charger()
     tous = _tous_les_articles()
     articles = _a_chercher(tous)
 
-    # Ce qui reste : jamais tente, ou tente sans succes moins de REESSAIS.
+    # What is left: never tried, or tried without success fewer than
+    # REESSAIS times.
     #
-    # UNE SEULE FOIS PAR REFERENCE. Plusieurs de nos articles partagent
-    # souvent la meme reference fournisseur — declinaisons creees
-    # separement, ou doublons de la base. Sans ce dedoublonnage, chacun
-    # declenchait son propre appel pour la meme question : une reference
-    # a ete interrogee 29 fois, une autre 10, et le compteur d'essais
-    # grimpait sans que rien de nouveau soit demande. C'est du temps
-    # d'appel perdu, et c'est aussi ce qui faisait croire a un
-    # acharnement sur des references epuisees.
+    # ONCE PER REFERENCE ONLY. Several of our articles often share the
+    # same supplier reference: variants created separately, or duplicates
+    # in the database. Without this deduplication, each of them triggered
+    # its own call for the same question: one reference was queried 29
+    # times, another 10, and the attempt counter kept climbing without
+    # anything new being asked. That is wasted call time, and it is also
+    # what made it look as though we were hammering exhausted references.
     restants, vues = [], set()
     for article in articles:
         reference = article["Réf. fournisseur"]
@@ -385,10 +385,10 @@ def main() -> None:
         restants.append(article)
 
     trouves = sum(1 for v in etat.values() if v.get("ean"))
-    print(f"{len(articles)} articles | {len(vues)} références distinctes | "
-          f"{trouves} déjà trouvées")
-    print(f"{len(restants)} à interroger, ~{len(restants) * PAUSE / 3600:.0f} h "
-          f"à raison d'un appel par minute\n")
+    print(f"{len(articles)} articles | {len(vues)} distinct references | "
+          f"{trouves} already found")
+    print(f"{len(restants)} to query, ~{len(restants) * PAUSE / 3600:.0f} h "
+          f"at one call a minute\n")
 
     depuis_ecriture = 0
     for rang, article in enumerate(restants, start=1):
@@ -406,7 +406,7 @@ def main() -> None:
         marque = {"trouve": "OK  ", "absent": "  --", "echec": " !! "}[statut]
         print(f"  [{rang:>5}/{len(restants)}] {marque} "
               f"{str(reference)[:20]:<20} {ean or ''}  "
-              f"({trouves} trouvés)", flush=True)
+              f"({trouves} found)", flush=True)
 
         _enregistrer(etat)
         depuis_ecriture += 1
@@ -418,7 +418,7 @@ def main() -> None:
             time.sleep(PAUSE + random.uniform(0, JITTER))
 
     _ecrire_resultats(etat, tous)
-    print(f"\n{trouves} codes EAN trouvés sur EUDAMED")
+    print(f"\n{trouves} EAN codes found on EUDAMED")
 
 
 if __name__ == "__main__":

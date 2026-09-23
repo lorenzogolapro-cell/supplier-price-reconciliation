@@ -1,46 +1,49 @@
 # -*- coding: utf-8 -*-
 """
-Accuses de reception du FOURNISSEUR D.
+Order acknowledgements from SUPPLIER D.
 
-Expediteur commandes@fournisseur-d.example, piece jointe
-Order_Acknowledgement.pdf. Le meme dossier Outlook recoit AUSSI les
-avis d'expedition (expeditions@), qui ne portent aucun prix : le filtre
-d'extraction se fait sur l'adresse complete, pas sur le domaine.
+Sender commandes@fournisseur-d.example, attachment
+Order_Acknowledgement.pdf. The same Outlook folder ALSO receives the
+shipping notices (expeditions@), which carry no price at all: the
+extraction filter is on the full address, not on the domain.
 
-CE QUE CET AR A PROUVE (21/09/2026)
-    La remise de 25 % (taux d'exemple) du fournisseur D etait jusque-la
-    MESUREE dans les prix que le responsable des prix avait arbitres
-    (quotient 0,7500, ecart-type 0,0001 sur 40 articles). Solide, mais
-    circulaire : s'il s'etait trompe, la mesure aurait reproduit son
-    erreur sans jamais la contredire — c'est exactement ce qui s'est
-    produit sur les pages « TARIFS NETS », ou un double escompte etait
-    valide par un DPA portant la meme erreur.
+WHAT THIS ACKNOWLEDGEMENT PROVED (21/09/2026)
+    Supplier D's 25 % discount (example rate) had until then been
+    MEASURED in the prices the price owner had arbitrated (ratio 0.7500,
+    standard deviation 0.0001 over 40 articles). Solid, but circular: had
+    he been wrong, the measurement would have reproduced his error
+    without ever contradicting it, which is exactly what happened on the
+    "TARIFS NETS" pages, where a double discount was validated by a
+    purchase price carrying the same error.
 
-    Cet AR casse le cercle : il porte le taux EN CLAIR, colonne « Taux de
-    remise % », a 25,00 sur 113 des 144 lignes lues.
+    This acknowledgement breaks the circle: it carries the rate IN PLAIN
+    SIGHT, in the "Taux de remise %" column, at 25.00 on 113 of the 144
+    rows read.
 
-    Il prouve aussi, separement, que les CHUT sont cotees a la PAIRE :
-    rapprochee au tarif, une ligne de CHUT donne un rapport de 1/1,50 la
-    ou un article normal donne 1/0,75. L'AR facture « 1 Each » ce que
-    le WMS compte au soulier.
+    It also proves, separately, that CHUT (temporary therapeutic
+    footwear) are quoted by the PAIR: matched against the price list, a
+    CHUT row gives a ratio of 1/1.50 where a normal article gives
+    1/0.75. The acknowledgement invoices as "1 Each" what the WMS counts
+    by the shoe.
 
-LES EXCEPTIONS, QUI VALENT LA LECTURE
-    Une regle vraie a 90 % cache une seconde regle dans les 10 % restants.
-      - une famille de chaussures (ref. 10-0001-x) est facturee a un
-        autre taux, et le PU ne bouge pas entre les quantites 1, 2 et 3 :
-        ce n'est pas du volume. Pose en `taux_par_famille` dans
+THE EXCEPTIONS, WHICH ARE WORTH THE READING
+    A rule that is true 90 % of the time hides a second rule in the
+    remaining 10 %.
+      - one shoe family (ref. 10-0001-x) is invoiced at a different
+        rate, and the unit price does not move between quantities 1, 2
+        and 3: this is not volume. Recorded as `taux_par_famille` in
         pa_remises.py.
-      - une famille d'attelles est facturee « remise 0,00 % », ecrit noir
-        sur blanc.
-      - la ceinture d'electrostimulation 10-0002 affiche « 25,00 % » et
-        est pourtant facturee au prix brut du tarif : sur cette famille,
-        la colonne remise est decorative. Ne jamais lire un taux sans
-        verifier le PU qui va avec.
+      - one splint family is invoiced at "remise 0,00 %", written in
+        black and white.
+      - the 10-0002 electrostimulation belt shows "25,00 %" and is
+        nevertheless invoiced at the price list's gross price: on that
+        family, the discount column is decorative. Never read a rate
+        without checking the unit price that goes with it.
 
-LE PRIX RETENU
-    « Prix Unitaire » est le prix NET — la remise y est deja appliquee,
-    et le total de ligne vaut PU x quantite. Le taux affiche sert donc a
-    comprendre, pas a recalculer.
+THE PRICE KEPT
+    "Prix Unitaire" is the NET price: the discount is already applied,
+    and the line total equals unit price x quantity. The rate displayed
+    is therefore there to be understood, not to be recomputed.
 """
 
 from __future__ import annotations
@@ -53,21 +56,22 @@ from ar.base import cadrer, nettoyer_texte, nombre, premier_groupe, texte_pdf
 
 FOURNISSEUR = "FOURNISSEUR D"
 
-# DEUX MISES EN PAGE, ET LA PLUS ANCIENNE N'A PAS « Each »
+# TWO LAYOUTS, AND THE OLDER ONE HAS NO "Each"
 #
 #   2026 : 310U-47 MODELE-F BLUE EURO 47/... 1 Each FR 18-SEP-26
 #          TRANSPORTEUR-Parcel-Suivi 13 40,00 25,00 40,00 EUR 5,50
 #   2025 : 10-0003-3 MODELE-G H7.5CM SIZE 3 1 FR 22-SEP-25
 #          TRANSPORTEUR-Parcel-Suivi 13 10,00 25,01 10,00 EUR 5,50
 #
-# Exiger « Each » rendait muets 37 des 70 AR — soit toute l'annee 2025 —
-# sans que rien ne le signale : un AR sans ligne reconnue ressemble a un
-# AR sans article. L'ancrage se fait donc sur ce que les deux formats ont
-# en commun : quantite, code pays, date promise.
+# Requiring "Each" made 37 of the 70 acknowledgements silent, the whole
+# of 2025, with nothing to signal it: an acknowledgement with no
+# recognised row looks like an acknowledgement with no article. The
+# anchor is therefore what the two formats have in common: quantity,
+# country code, promised date.
 #
-# Les trois nombres qui comptent sont les derniers avant « EUR ». Ce qui
-# les separe du libelle (transporteur, numero de suivi) varie d'un AR a
-# l'autre et ne se modelise pas : on l'absorbe.
+# The three numbers that matter are the last ones before "EUR". What
+# separates them from the label (carrier, tracking number) varies from
+# one acknowledgement to the next and cannot be modelled: we absorb it.
 LIGNE = re.compile(
     r"^(?P<ref>[A-Z0-9][A-Z0-9./+-]{2,24})\s+(?P<lib>.+?)\s+"
     r"(?P<qte>\d{1,4})\s+(?:Each\s+)?[A-Z]{2}\s+\d{2}-[A-Z]{3}-\d{2}\s+.*?"
@@ -83,7 +87,8 @@ MOIS = {"JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
 
 
 def _date(texte: str):
-    """« 18-SEP-26 » -> Timestamp. Ce fournisseur date en anglais abrege."""
+    """Reads "18-SEP-26" as a Timestamp: this supplier dates in
+    abbreviated English."""
     trouve = DATE.search(texte)
     if not trouve:
         return None
@@ -104,8 +109,9 @@ def extract(chemin) -> pd.DataFrame:
         trouve = LIGNE.match(brute.strip())
         if not trouve:
             continue
-        # Chez ce fournisseur le « Prix Unitaire » est deja net : le taux
-        # affiche documente la remise, il ne reste pas a l'appliquer.
+        # At this supplier the "Prix Unitaire" is already net: the rate
+        # displayed documents the discount, there is nothing left to
+        # apply.
         unitaire = nombre(trouve.group("pu"))
         lignes.append({
             "num_ar": num_ar,

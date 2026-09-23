@@ -1,60 +1,64 @@
 # -*- coding: utf-8 -*-
 """
-Chantier PA — ce qu'on met de côté, en deux listes et rien d'autre.
+Purchase-price workstream: what we set aside, in separate lists and
+nothing else.
 
     python pa_ecartes.py
 
-POURQUOI TROIS FEUILLES, ET PAS UNE
-    Ce sont trois décisions de nature différente, et les confondre ferait
-    perdre l'information :
+WHY SEVERAL SHEETS, AND NOT ONE
+    These are decisions of different natures, and mixing them up would
+    lose the information:
 
-    « Écarté »            le produit existe et se vend ; c'est NOUS qui le
-                          remettons à plus tard — lits, fauteuils roulants,
-                          releveurs, VPH. Décision de périmètre, réversible.
+    "Écarté"             the product exists and sells; it is WE who are
+                         postponing it (beds, wheelchairs, lift chairs,
+                         VPH). A scope decision, reversible.
 
-    « Fournisseur arrêté » on n'achète plus chez EUX ; le produit lui-même
-                          n'a rien. Constat des appros, daté
-                          (`fournisseurs_arretes.py`), pas une supposition.
+    "Fournisseur arrêté" we no longer buy from THEM; there is nothing
+                         wrong with the product itself. A supply finding,
+                         dated (`fournisseurs_arretes.py`), not a guess.
 
-    « Arrêt fabricant »   le produit est introuvable au catalogue du
-                          fournisseur ; il est probablement arrêté. Constat
-                          sur le monde extérieur, pas une décision interne.
+    "Arrêt fabricant"    the product cannot be found in the supplier's
+                         catalogue; it has probably been discontinued. A
+                         finding about the outside world, not an internal
+                         decision.
 
-    Un article écarté reviendra peut-être ; un fournisseur arrêté ou un
-    produit arrêté, non. D'où trois feuilles.
+    An item set aside may come back; a dropped supplier or a
+    discontinued product will not. Hence the separate sheets.
 
-CE QUI REMPLIT CHAQUE FEUILLE
-    Écarté             l'annotation portée à la main dans pa_decisions.xlsx,
-                       PLUS toute la famille lourde du périmètre (FAMILLES),
-                       PLUS les fournisseurs mis de côté par la direction.
-    Fournisseur arrêté `fournisseurs_arretes.est_arrete()`, regardé sur le
-                       Fournisseur ET le fabricant — sinon un article dont
-                       le WMS ne renseigne QUE le fabricant échappe au
-                       filtre. C'est arrivé le 18/09 : le 48553 (Fournisseur
-                       T, champ Fournisseur vide, fabricant « FRST FRANCE
-                       SAS ») avait reçu un vrai prix 2026 malgré l'arrêt
-                       des commandes constaté le 15/09.
-    Arrêt fabricant    l'annotation à la main, et elle SEULE. Rien ici
-                       n'est déduit : « arrêté » est une affirmation sur un
-                       produit, elle ne se devine pas.
+WHAT FILLS EACH SHEET
+    Écarté             the annotation written by hand in
+                       pa_decisions.xlsx, PLUS the whole heavy-equipment
+                       family of the scope (FAMILLES), PLUS the suppliers
+                       set aside by management.
+    Fournisseur arrêté `fournisseurs_arretes.est_arrete()`, checked on the
+                       supplier AND on the manufacturer, otherwise an item
+                       for which the WMS only fills in the manufacturer
+                       escapes the filter. That happened on 18/09: item
+                       48553 (Supplier T, empty supplier field,
+                       manufacturer "FRST FRANCE SAS") had been given a
+                       real 2026 price despite ordering having been found
+                       to have stopped on 15/09.
+    Arrêt fabricant    the hand-written annotation, and that ALONE.
+                       Nothing here is inferred: "discontinued" is a claim
+                       about a product, it is not something to guess.
 
-    Le WMS ne date ni ne signale l'arrêt d'un PRODUIT (aucun Type 79 au
-    périmètre au 17/09) : il n'existe donc aucune corroboration
-    automatique pour « Arrêt fabricant ». La colonne « Votre annotation »
-    est la preuve, et la seule. L'arrêt d'un FOURNISSEUR, lui, est écrit
-    et daté ailleurs — ce n'est pas la même source, ni le même niveau de
-    certitude.
+    The WMS neither dates nor flags the discontinuation of a PRODUCT (no
+    Type 79 in the scope as of 17/09): there is therefore no automatic
+    corroboration for "Arrêt fabricant". The "Votre annotation" column is
+    the evidence, and the only one. The dropping of a SUPPLIER, by
+    contrast, is written down and dated elsewhere: not the same source,
+    nor the same level of certainty.
 
-LE FOURNISSEUR MANQUANT
-    423 articles du périmètre n'ont pas de fournisseur. 420 ont un
-    fabricant dans l'extract WMS, et c'est lui qu'on reprend — la colonne
-    « Origine du fournisseur » dit toujours d'où vient la valeur, pour
-    qu'on ne confonde jamais un fournisseur su et un fabricant supposé.
-    Les 3 restants sont nommés dans la sortie console.
+THE MISSING SUPPLIER
+    423 items of the scope have no supplier. 420 have a manufacturer in
+    the WMS extract, and that is what we fall back on; the "Origine du
+    fournisseur" column always says where the value comes from, so that a
+    known supplier is never confused with an assumed manufacturer. The
+    remaining 3 are named in the console output.
 
-RIEN N'EST ÉCRIT AILLEURS
-    Ce module lit et range. Il ne touche ni au classeur du responsable des
-    prix, ni aux prix, ni au périmètre.
+NOTHING IS WRITTEN ANYWHERE ELSE
+    This module reads and sorts. It touches neither the price owner's
+    workbook, nor the prices, nor the scope.
 """
 
 from __future__ import annotations
@@ -85,13 +89,13 @@ ETAT = SORTIE_ACHATS / "pa_etat_par_article.xlsx"
 DECISIONS = SORTIE_ACHATS / "pa_decisions.xlsx"
 SORTIE = SORTIE_ACHATS / "pa_ecartes_et_arrets.xlsx"
 
-# Les familles lourdes, au mot près du WMS. Décision de la direction le
-# 17/09 : lits, fauteuils roulants, releveurs et VPH sortent du chantier
-# courant — trop d'options, trop de déclinaisons, un tarif par
-# configuration. On les range, on ne les jette pas.
+# The heavy-equipment families, word for word as the WMS spells them.
+# Management decision on 17/09: beds, wheelchairs, lift chairs and VPH
+# leave the current workstream, too many options, too many variants, one
+# price per configuration. We file them away, we do not throw them out.
 #
-# « Transfert » n'y est PAS : les guidons de transfert se cotent
-# normalement et on en a déjà rapproché (cf. l'article 31128).
+# "Transfert" is NOT in here: transfer handles are priced normally and
+# some have already been matched (see item 31128).
 FAMILLES = (
     "Fauteuil Roulant",
     "FAUTEUIL ROULANT MANUEL",
@@ -103,60 +107,59 @@ FAMILLES = (
     "LES APPAREILS DE VERTICALISATION",
 )
 
-# Mis de côté par la direction. On regarde le FABRICANT autant que le
-# fournisseur : 67 articles portent le Fournisseur H en fabricant sans le
-# porter en fournisseur, et passaient au travers du filtre.
+# Set aside by management. We look at the MANUFACTURER as much as the
+# supplier: 67 items carry Supplier H as manufacturer without carrying it
+# as supplier, and were slipping through the filter.
 MIS_DE_COTE = re.compile(r"FRSB|FRSH|FRSR", re.I)
 
-# Ce que veulent dire vos mots. L'arrêt l'emporte : il est plus précis
-# qu'un écartement de famille, et il vient d'un constat au catalogue.
+# What your words mean. Discontinuation wins: it is more precise than a
+# family-level exclusion, and it comes from a finding in the catalogue.
 #
-# « inexistant » s'écrit à la main, donc rarement deux fois pareil : on a
-# lu « innexistant » ET « inenxistant » le même jour. D'où le trou de
-# trois lettres entre « in » et « xist » — une annotation perdue pour une
-# coquille, c'est un article qu'on croit encore vendable.
+# "inexistant" is typed by hand, so rarely twice the same way: we read
+# "innexistant" AND "inenxistant" on the same day. Hence the three-letter
+# gap between "in" and "xist"; an annotation lost to a typo means an item
+# we still believe is sellable.
 DIT_ARRET = re.compile(
     r"arr[eêé]t|n.existe plus|\bin[a-z]{0,3}xist|introuvable", re.I)
 DIT_ECARTE = re.compile(r"[eé]cart|releveur|\bvph\b|exclu", re.I)
 
-# SANS CATALOGUE — le fournisseur ne nous a jamais envoyé de tarif (18/09)
+# NO CATALOGUE: the supplier never sent us a price list (18/09)
 #
-# Quatrième catégorie, et elle ne dit pas la même chose que les trois
-# autres. « Écarté » est un choix, « arrêté » est un constat sur le
-# produit ou la relation ; ici il n'y a NI choix NI arrêt : il manque
-# simplement la matière première. Le produit se vend, le fournisseur
-# existe, on n'a rien à lire.
+# A fourth category, and it does not say the same thing as the other
+# three. "Écarté" is a choice, "arrêté" is a finding about the product or
+# the relationship; here there is NEITHER a choice NOR a stop: the raw
+# material is simply missing. The product sells, the supplier exists, we
+# have nothing to read.
 #
-# Confondre les deux fausse la lecture dans les deux sens : ça gonfle le
-# reste-à-faire d'articles sur lesquels aucun travail n'est possible, et
-# ça masque le seul geste qui les débloquerait — réclamer le tarif.
+# Mixing the two distorts the reading in both directions: it inflates the
+# work remaining with items on which no work at all is possible, and it
+# hides the one action that would unblock them, asking for the price list.
 #
-# COMMENT LA CATÉGORIE SE REMPLIT — deux voies, et la première suffit
-# presque toujours :
+# HOW THE CATEGORY FILLS UP: two routes, and the first is almost always
+# enough:
 #
-#   1. DÉRIVÉE du motif « aucun tarif reçu de ce fournisseur », que
-#      `pa_etat_par_article` pose déjà. 56 fournisseurs, 313 articles
-#      actifs au 18/09. Aucune liste à tenir : un fournisseur qui envoie
-#      enfin son tarif sort de la catégorie tout seul, à la passe
-#      suivante.
+#   1. DERIVED from the "aucun tarif reçu de ce fournisseur" reason that
+#      `pa_etat_par_article` already sets. 56 suppliers, 313 active items
+#      as of 18/09. No list to maintain: a supplier who finally sends
+#      their price list leaves the category on its own, at the next run.
 #
-#   2. NOMMÉE à la main ci-dessous, pour ce que le motif ne peut pas
-#      attraper — au premier chef les articles SANS fournisseur dans le WMS,
-#      qui portent un autre motif (« aucun fournisseur au périmètre ») et
-#      dont seul le fabricant est connu : le Fournisseur FA en est le cas
-#      type, ses 12 articles n'ont pas de fournisseur du tout.
+#   2. NAMED by hand below, for what the reason cannot catch, first and
+#      foremost the items with NO supplier in the WMS, which carry a
+#      different reason ("aucun fournisseur au périmètre") and for which
+#      only the manufacturer is known: Supplier FA is the textbook case,
+#      its 12 items have no supplier at all.
 #
-# Liste dictée par le métier le 18/09. On matche sur le fournisseur ET sur
-# le fabricant, pour la raison ci-dessus.
+# List dictated by the business on 18/09. We match on the supplier AND on
+# the manufacturer, for the reason above.
 #
-# NE SONT PAS DANS CETTE LISTE, volontairement :
-#   Les Fournisseurs Q et Q2 — on a leur catalogue
-#       (`catalogues/FRSQ-FRSQ2/2026/`), ce sont deux noms d'un même
-#       fournisseur. Si leurs articles ressortent sans prix, c'est un défaut
-#       de rapprochement, pas un tarif manquant — voir la note dans
+# DELIBERATELY NOT IN THIS LIST:
+#   Suppliers Q and Q2: we have their catalogue
+#       (`catalogues/FRSQ-FRSQ2/2026/`), they are two names for one and
+#       the same supplier. If their items come out without a price, that
+#       is a matching defect, not a missing price list; see the note in
 #       `classer()`.
-#   Le Fournisseur FP — repris par le Fournisseur H : c'est un fournisseur
-#       ARRÊTÉ, il n'y aura jamais de catalogue
+#   Supplier FP: taken over by Supplier H, so it is a DROPPED supplier,
+#       there will never be a catalogue
 #       (`fournisseurs_arretes.ARRETES`).
 SANS_CATALOGUE = (
     "FRSFA",
@@ -169,42 +172,42 @@ SANS_CATALOGUE = (
     "FRSFG",
     "FRSBN",
     "FRSFH",
-    "FRSFI",              # « SAS FRSFI - FRSFI BIS » : les deux raisons
-    "FRSFI BIS",          #   sociales designent le même fournisseur
-    "FRSFJ CENTRE",       # le sigle seul attraperait deux autres
-                          #   fournisseurs dont le nom le contient
+    "FRSFI",              # "SAS FRSFI - FRSFI BIS": the two legal names
+    "FRSFI BIS",          #   designate the same supplier
+    "FRSFJ CENTRE",       # the acronym alone would catch two other
+                          #   suppliers whose name contains it
     "FRSFK",
     "FRSFL",
-    "FRSFM NORD",         # le sigle seul est trop court pour un mot entier
+    "FRSFM NORD",         # the acronym alone is too short for a whole word
     "FRSFN-SUFFIXE",
-    "FRSFN SUFFIXE",      # deux orthographes, trait d'union ou espace
+    "FRSFN SUFFIXE",      # two spellings, hyphen or space
     "FRSFO",
 )
 
 _SANS_CATALOGUE = re.compile(
     "|".join(re.escape(nom) for nom in SANS_CATALOGUE), re.I)
 
-# MARQUES QUI IDENTIFIENT UN FOURNISSEUR DANS UN LIBELLÉ (18/09)
+# BRANDS THAT IDENTIFY A SUPPLIER INSIDE A LABEL (18/09)
 #
-# Règle posée par le métier : « si y'a le nom d'un fournisseur dans le
-# libellé, tu mets dans arrêt ». Le cas qui l'a motivée :
+# Rule laid down by the business: "if a supplier's name is in the label,
+# you put it in discontinued". The case that prompted it:
 #
-#   46675  STETHOSCOPE ... MODELE FRSBD GRIS  -> Fournisseur A,  sans prix
-#   46677  STETHOSCOPE ... MODELE FRSBD VERT  -> Fournisseur BD, a un prix
+#   46675  STETHOSCOPE ... MODELE FRSBD GRIS  -> Supplier A,  no price
+#   46677  STETHOSCOPE ... MODELE FRSBD VERT  -> Supplier BD, has a price
 #
-# Deux fois le même produit : celui qui est correctement rattaché est
-# chiffré, l'autre non. L'article n'est pas introuvable, il est MAL
-# RATTACHÉ dans le WMS — et on ne corrige pas le WMS depuis ce dépôt.
+# The same product twice: the one that is correctly attached is priced,
+# the other is not. The item is not untraceable, it is WRONGLY ATTACHED
+# in the WMS, and we do not fix the WMS from this repository.
 #
-# LISTE CURÉE, PAS DÉRIVÉE — et c'est délibéré. Dériver les marques des
-# 127 noms de fournisseurs déclenchait 14 fois, dont QUATRE sur le mot
-# « CONFORT » : « OPTION ASSISE CONFORT ROLLATOR » n'a rien à voir avec
-# la raison sociale du Fournisseur CT ni avec celle du Fournisseur BV, qui
-# contiennent toutes deux ce mot. C'est le même piège que
-# `MOTS_TROP_COURANTS` ailleurs dans le chantier : un mot de français
-# courant ne peut pas servir d'identifiant.
+# A CURATED LIST, NOT A DERIVED ONE, and that is deliberate. Deriving the
+# brands from the 127 supplier names fired 14 times, FOUR of them on the
+# word "CONFORT": "OPTION ASSISE CONFORT ROLLATOR" has nothing to do with
+# the legal name of Supplier CT nor with that of Supplier BV, both of
+# which contain that word. It is the same trap as `MOTS_TROP_COURANTS`
+# elsewhere in the workstream: an everyday French word cannot serve as an
+# identifier.
 #
-# N'ajouter ici qu'un nom qui ne veut RIEN DIRE d'autre qu'une marque.
+# Only add a name here that means NOTHING other than a brand.
 MARQUES_FOURNISSEUR = (
     "FRSBD", "FRSV", "FRSF", "FRSG", "FRSC", "FRSAU",
     "FRSAE", "FRSAK", "FRSAF", "FRSD", "FRSX", "FRSO",
@@ -218,8 +221,8 @@ def _plein(serie: pd.Series) -> pd.Series:
 
 
 def _aplati(texte) -> str:
-    """Un nom réduit à ses lettres et chiffres, pour comparer sans se faire
-    piéger par la ponctuation (« FRS.AE MEDICAL » vs « FRSAE »)."""
+    """A name reduced to its letters and digits, so that comparison is not
+    trapped by punctuation ("FRS.AE MEDICAL" vs "FRSAE")."""
     sans_accent = unicodedata.normalize("NFKD", str(texte or "").upper())
     sans_accent = "".join(c for c in sans_accent
                           if not unicodedata.combining(c))
@@ -228,13 +231,12 @@ def _aplati(texte) -> str:
 
 @lru_cache(maxsize=1)
 def _catalogues_connus() -> tuple:
-    """Les noms sous lesquels un catalogue existe : dossiers + registre.
+    """The names under which a catalogue exists: folders + registry.
 
-    Sert à répondre à UNE question : « a-t-on quelque chose à lire pour ce
-    fournisseur ? ». Deux sources parce qu'elles ne se recouvrent pas — un
-    dossier peut exister sans entrée au registre (personne ne le lit
-    encore), et un motif du registre peut viser un dossier au nom
-    différent.
+    Serves to answer ONE question: "do we have anything to read for this
+    supplier?". Two sources because they do not overlap: a folder can
+    exist with no registry entry (nobody reads it yet), and a registry
+    pattern can point at a folder with a different name.
     """
     from main import CATALOGUES, FOURNISSEURS
 
@@ -242,9 +244,9 @@ def _catalogues_connus() -> tuple:
     if CATALOGUES.is_dir():
         for dossier in CATALOGUES.iterdir():
             if dossier.is_dir() and dossier.name != "Archives":
-                # « FRSQ-FRSQ2 » vaut pour FRSQ ET pour FRSQ2 : on éclate
-                # sur les séparateurs, sinon FRSQ2 passerait pour sans
-                # catalogue alors que son tarif est dans ce dossier.
+                # "FRSQ-FRSQ2" stands for FRSQ AND for FRSQ2: we split on
+                # the separators, otherwise FRSQ2 would pass for having no
+                # catalogue when its price list is in that very folder.
                 for morceau in re.split(r"[-+&/]", dossier.name):
                     if len(_aplati(morceau)) >= 4:
                         noms.add(_aplati(morceau))
@@ -255,7 +257,7 @@ def _catalogues_connus() -> tuple:
 
 
 def a_un_catalogue(nom) -> bool:
-    """Existe-t-il un catalogue pour ce fournisseur ou ce fabricant ?"""
+    """Is there a catalogue for this supplier or this manufacturer?"""
     p = _aplati(nom)
     if len(p) < 4:
         return False
@@ -270,7 +272,8 @@ def perimetre() -> pd.DataFrame:
     d["Vendu 12 mois"] = d["VENTE_12M"].str.lower().map(
         {"true": "oui"}).fillna("")
 
-    # Le fournisseur manquant se comble par le fabricant, et ça se dit.
+    # The missing supplier is filled in from the manufacturer, and that
+    # is stated.
     manque = d["Fournisseur"] == ""
     d["Origine du fournisseur"] = "WMS"
     d.loc[manque, "Origine du fournisseur"] = "introuvable"
@@ -281,7 +284,7 @@ def perimetre() -> pd.DataFrame:
 
 
 def annotations() -> pd.DataFrame:
-    """Vos mots, repris tels quels, avec la feuille d'où ils viennent."""
+    """Your words, taken as they are, with the sheet they come from."""
     if not DECISIONS.exists():
         return pd.DataFrame(columns=["Code article", "Votre annotation",
                                      "Feuille d'origine"])
@@ -289,7 +292,7 @@ def annotations() -> pd.DataFrame:
     morceaux = []
     for feuille in x.sheet_names:
         if feuille.startswith(("0", "1")):
-            continue  # la feuille 1 décide par fournisseur, pas par article
+            continue  # sheet 1 decides per supplier, not per item
         d = pd.read_excel(x, sheet_name=feuille, skiprows=3, dtype=str)
         if "Décision" not in d.columns or "Code article" not in d.columns:
             continue
@@ -324,58 +327,59 @@ def _mettre_en_colonnes(d: pd.DataFrame, motif: pd.Series) -> pd.DataFrame:
 
 
 def classer(d: pd.DataFrame) -> dict:
-    """Le classement, ligne par ligne — LA fonction de référence.
+    """The classification, row by row: THE reference function.
 
-    Elle travaille sur n'importe quelle table portant `Famille`,
-    `Fournisseur`, `Nom fabriquant` et, si elle existe, `Votre annotation`.
-    Elle ne lit aucun fichier : c'est ce qui permet à `pa_etat_par_article`
-    de l'appeler PENDANT qu'il construit le socle, alors que le fichier
-    dont `pa_ecartes` part d'habitude n'existe pas encore.
+    It works on any table carrying `Famille`, `Fournisseur`,
+    `Nom fabriquant` and, if it exists, `Votre annotation`. It reads no
+    file: that is what allows `pa_etat_par_article` to call it WHILE it
+    is building the base view, at a point where the file `pa_ecartes`
+    normally starts from does not exist yet.
 
-    POURQUOI UNE SEULE FONCTION, ET PAS DEUX COPIES
-        Le socle et ce module doivent classer IDENTIQUEMENT, sinon la
-        colonne « Mise à l'écart » du socle et les feuilles produites ici
-        se contrediront un jour — et personne ne saura laquelle croit. Une
-        règle écrite deux fois est une règle qui divergera.
+    WHY ONE FUNCTION, AND NOT TWO COPIES
+        The base view and this module must classify IDENTICALLY,
+        otherwise the base view's "Mise à l'écart" column and the sheets
+        produced here will contradict each other one day, and nobody will
+        know which to believe. A rule written twice is a rule that will
+        drift.
 
-    Rend quatre masques booléens, plus le motif en clair.
+    Returns four boolean masks, plus the reason in plain words.
     """
     dit = (_plein(d["Votre annotation"]) if "Votre annotation" in d.columns
            else pd.Series("", index=d.index))
     arret = dit.str.contains(DIT_ARRET) & ~dit.str.contains(DIT_ECARTE)
     ecarte_dit = dit.str.contains(DIT_ECARTE) & ~arret
 
-    # Les annotations portées dans le LIVRABLE, relevées au registre
-    # durable (`pa_annotations_livrable`). Elles s'ajoutent à celles de
-    # `pa_decisions.xlsx` : ce sont deux endroits où la même personne
-    # écrit la même sorte de décision, à deux moments différents.
+    # The annotations written in the DELIVERABLE, recorded in the durable
+    # register (`pa_annotations_livrable`). They add to those in
+    # `pa_decisions.xlsx`: these are two places where the same person
+    # writes the same kind of decision, at two different moments.
     codes = _plein(d["Code article"])
     arret |= codes.isin(pa_annotations_livrable.par_lecture("arrêt fabricant"))
     annote_sans_catalogue = codes.isin(
         pa_annotations_livrable.par_lecture("sans catalogue"))
 
-    # LE NOM D'UN AUTRE FOURNISSEUR DANS LE LIBELLÉ (règle du 18/09)
+    # ANOTHER SUPPLIER'S NAME INSIDE THE LABEL (rule of 18/09)
     #
-    # « STETHOSCOPE MODELE FRSBD GRIS » est rattaché au Fournisseur A
-    # dans le WMS alors que son libellé dit FRSBD — et son jumeau vert,
-    # correctement rattaché au Fournisseur BD, a bien un prix. L'article
-    # n'est pas introuvable : il est mal rattaché, et on ne corrige pas le
-    # WMS depuis ici.
+    # "STETHOSCOPE MODELE FRSBD GRIS" is attached to Supplier A in the
+    # WMS although its label says FRSBD, and its green twin, correctly
+    # attached to Supplier BD, does have a price. The item is not
+    # untraceable: it is wrongly attached, and we do not fix the WMS from
+    # here.
     #
-    # On ne retient que les fournisseurs RÉELS du périmètre, pas n'importe
-    # quel mot : un libellé qui contient un nom commun homonyme d'une
-    # marque produirait sinon des faux positifs en série.
-    # DEUX GARDE-FOUS, chacun payé par un faux positif mesuré le 18/09 :
+    # We only keep the REAL suppliers of the scope, not just any word: a
+    # label containing a common noun that happens to be a brand name
+    # would otherwise produce false positives by the series.
+    # TWO GUARDRAILS, each paid for by a false positive measured on 18/09:
     #
-    #   1. On compare des noms APLATIS (sans point ni espace). Sans cela,
-    #      « FRSAE <produit> » chez « FRS.AE MEDICAL » passait pour un
-    #      article d'un AUTRE fournisseur, à cause du seul point : 21
-    #      articles du Fournisseur AE, tous déjà chiffrés, partaient en
-    #      « arrêt ».
+    #   1. We compare FLATTENED names (no dot, no space). Without that,
+    #      "FRSAE <product>" at "FRS.AE MEDICAL" passed for an item of
+    #      ANOTHER supplier, because of that one dot: 21 items of
+    #      Supplier AE, all already priced, were going into
+    #      "discontinued".
     #
-    #   2. La règle ne vaut QUE pour les articles SANS PRIX. Un article
-    #      chiffré n'a pas de problème de rattachement à régler — quoi que
-    #      dise son libellé, le prix est là et il est juste.
+    #   2. The rule only holds for items with NO PRICE. A priced item has
+    #      no attachment problem to settle: whatever its label says, the
+    #      price is there and it is right.
     autre_fournisseur = pd.Series(False, index=d.index)
     if "Désignation" in d.columns:
         libelle = _plein(d["Désignation"]).str.upper()
@@ -392,43 +396,45 @@ def classer(d: pd.DataFrame) -> dict:
 
     arret |= autre_fournisseur
 
-    # « SI ILS ONT UN CATALOGUE, ILS ONT UN PRIX » — règle du métier, 18/09
+    # "IF THEY HAVE A CATALOGUE, THEY HAVE A PRICE": business rule, 18/09
     #
-    # C'est la règle qui ferme la boucle, et elle était déjà écrite dans
-    # les données sans qu'on l'exploite. `pa_etat_par_article` distingue
-    # depuis toujours deux motifs d'absence de prix :
+    # This is the rule that closes the loop, and it was already written
+    # into the data without being used. `pa_etat_par_article` has always
+    # distinguished two reasons for a missing price:
     #
-    #   « fournisseur tarifé, mais l'article n'est pas dans son tarif »
-    #        -> on A le catalogue, la référence n'y figure pas.
-    #           Donc le produit est sorti de la gamme : ARRÊT.
+    #   "fournisseur tarifé, mais l'article n'est pas dans son tarif"
+    #        -> we DO have the catalogue, the reference is not in it.
+    #           So the product has left the range: DISCONTINUED.
     #
-    #   « aucun tarif reçu de ce fournisseur »
-    #        -> on n'a RIEN à lire : SANS CATALOGUE (traité plus bas).
+    #   "aucun tarif reçu de ce fournisseur"
+    #        -> we have NOTHING to read: NO CATALOGUE (handled below).
     #
-    # SUR QUOI ÇA REPOSE : le constat est direct — LE CATALOGUE DU
-    # FOURNISSEUR NE PROPOSE PAS CE PRODUIT. On a son tarif, on l'a lu en
-    # entier, la référence n'y est pas. Le programme ne devine rien : il
-    # rapproche ce qu'il a lu et constate une absence.
+    # WHAT THIS RESTS ON: the finding is direct, THE SUPPLIER'S CATALOGUE
+    # DOES NOT OFFER THIS PRODUCT. We have their price list, we have read
+    # it in full, the reference is not there. The program guesses
+    # nothing: it matches what it has read and records an absence.
     #
-    # La réserve est étroite et porte sur des cas isolés : une référence
-    # qui aurait changé côté fournisseur produirait la même absence. C'est
-    # pourquoi le classement se REFAIT à chaque passe et n'est jamais
-    # figé — tarif complété ou référence corrigée dans le WMS, et l'article
-    # revient de lui-même au chantier parce que son motif aura changé.
+    # The caveat is narrow and concerns isolated cases: a reference that
+    # had changed on the supplier's side would produce the same absence.
+    # That is why the classification is REDONE at every run and is never
+    # frozen: complete the price list or fix the reference in the WMS,
+    # and the item comes back into the workstream by itself because its
+    # reason will have changed.
     #
-    # Le motif n'est rempli QUE sur les articles sans prix (règle de
-    # `pa_etat_par_article`) : s'y appuyer restreint donc d'office la
-    # portée, sans avoir à le redire.
+    # The reason is only filled in on items without a price (rule of
+    # `pa_etat_par_article`): relying on it therefore restricts the reach
+    # automatically, with nothing more to say.
     if "Motif" in d.columns:
         motif_lu = _plein(d["Motif"])
         arret |= motif_lu.str.contains("n'est pas dans son tarif",
                                        regex=False)
 
-        # « Aucun fournisseur au périmètre — voir le fabricant » : la fiche
-        # du WMS ne dit pas chez qui on achète, seul le fabricant est connu.
-        # C'est donc LUI qui répond à la question « a-t-on un catalogue ? »,
-        # et la même règle s'applique ensuite : catalogue + pas de prix =
-        # arrêt ; pas de catalogue = sans catalogue (plus bas).
+        # "Aucun fournisseur au périmètre — voir le fabricant": the WMS
+        # record does not say who we buy from, only the manufacturer is
+        # known. So it is the manufacturer that answers the question "do
+        # we have a catalogue?", and the same rule then applies:
+        # catalogue + no price = discontinued; no catalogue = no
+        # catalogue (further down).
         via_fabricant = motif_lu.str.contains("voir le fabricant",
                                               regex=False)
         if via_fabricant.any():
@@ -439,25 +445,26 @@ def classer(d: pd.DataFrame) -> dict:
     parque = (_plein(d["Fournisseur"]).str.contains(MIS_DE_COTE)
               | _plein(d["Nom fabriquant"]).str.contains(MIS_DE_COTE))
 
-    # Fournisseur arrêté (Fournisseurs T, BC…) : regardé sur le Fournisseur
-    # ET le fabricant. Le statut « 4 — HORS CHANTIER » le dit déjà pour la
-    # plupart, mais seulement quand le WMS renseigne « Fournisseur » — un
-    # article où seul le fabricant est connu (48553) lui échappe.
+    # Dropped supplier (Suppliers T, BC...): checked on the supplier AND
+    # on the manufacturer. The "4 — HORS CHANTIER" status already says so
+    # for most of them, but only where the WMS fills in "Fournisseur"; an
+    # item for which only the manufacturer is known (48553) escapes it.
     fournisseur_arrete = (
         _plein(d["Fournisseur"]).map(fournisseurs_arretes.est_arrete)
         | _plein(d["Nom fabriquant"]).map(fournisseurs_arretes.est_arrete))
     if "Statut PA" in d.columns:
         fournisseur_arrete |= _plein(d["Statut PA"]).str.startswith("4")
 
-    # SANS CATALOGUE : dérivé du motif quand il existe, nommé sinon.
+    # NO CATALOGUE: derived from the reason where it exists, named
+    # otherwise.
     #
-    # Les Fournisseurs Q et Q2 sont exclus explicitement : leur catalogue
-    # existe (`FRSQ-FRSQ2/2026`). Si un de leurs articles ressort sans prix,
-    # c'est que le rapprochement a échoué — un tout autre problème, qu'il
-    # ne faut pas masquer en le rangeant ici. Au 18/09 le registre ne
-    # cherche d'ailleurs que « FRSQ » : les articles FRSQ2 ne sont jamais
-    # confrontés à ce tarif, ce qui est un défaut à corriger, pas une
-    # absence de source.
+    # Suppliers Q and Q2 are excluded explicitly: their catalogue exists
+    # (`FRSQ-FRSQ2/2026`). If one of their items comes out without a
+    # price, then the matching failed, an entirely different problem,
+    # which must not be hidden by filing it here. As of 18/09 the
+    # registry in fact only looks for "FRSQ": FRSQ2 items are never set
+    # against that price list, which is a defect to fix, not a missing
+    # source.
     a_un_catalogue_q = (
         _plein(d["Fournisseur"]).str.contains(r"FRSQ|FRSQ2", regex=True)
         | _plein(d["Nom fabriquant"]).str.contains(r"FRSQ|FRSQ2", regex=True))
@@ -467,18 +474,18 @@ def classer(d: pd.DataFrame) -> dict:
         motif_lu = _plein(d["Motif"])
         sans_catalogue |= motif_lu.str.contains("aucun tarif reçu",
                                                 regex=False)
-        # Sans fournisseur dans le WMS ET sans catalogue chez le fabricant :
-        # il n'y a rien à lire nulle part.
+        # No supplier in the WMS AND no catalogue at the manufacturer:
+        # there is nothing to read anywhere.
         sans_catalogue |= (motif_lu.str.contains("voir le fabricant",
                                                  regex=False)
                            & ~_plein(d["Nom fabriquant"]).map(a_un_catalogue))
     sans_catalogue |= annote_sans_catalogue
     sans_catalogue &= ~a_un_catalogue_q
 
-    # Le motif, dans l'ordre où il prime. La première affectation est la
-    # plus faible, la dernière l'emporte : un fauteuil roulant acheté chez
-    # un fournisseur sans catalogue reste d'abord un fauteuil roulant —
-    # réclamer son tarif ne servirait à rien tant qu'il est mis de côté.
+    # The reason, in order of precedence. The first assignment is the
+    # weakest, the last one wins: a wheelchair bought from a supplier
+    # with no catalogue is first and foremost a wheelchair, asking for
+    # its price list would serve no purpose while it is set aside.
     motif = pd.Series("", index=d.index)
     motif[sans_catalogue] = ("sans catalogue — aucun tarif reçu de "
                              + _plein(d["Fournisseur"])[sans_catalogue]
@@ -517,19 +524,19 @@ def construire() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame
     sans_catalogue = c["sans_catalogue"]
     motif = c["motif"]
 
-    # CHAQUE ARTICLE DANS UNE SEULE FEUILLE, celle de son motif retenu.
+    # EACH ITEM IN A SINGLE SHEET, the one for the reason it was given.
     #
-    # Sans cette exclusion mutuelle, les totaux des quatre feuilles ne
-    # s'additionnent plus : mesuré le 18/09, elles affichaient 2 225
-    # lignes pour 1 780 articles réellement mis à l'écart — 445 comptés
-    # deux fois, parce qu'un fauteuil arrêté figurait à la fois en
-    # « Écarté » et en « Arrêt fabricant ». Un lecteur qui additionne les
-    # onglets tombe alors sur un chiffre qui n'existe pas.
+    # Without this mutual exclusion, the totals of the four sheets no
+    # longer add up: measured on 18/09, they showed 2,225 rows for 1,780
+    # items actually set aside, 445 counted twice, because a
+    # discontinued wheelchair appeared both in "Écarté" and in "Arrêt
+    # fabricant". A reader adding up the tabs then lands on a figure
+    # that does not exist.
     #
-    # L'ordre est CELUI DU MOTIF, pour que la feuille où l'article se
-    # trouve corresponde toujours à l'étiquette qu'il porte. Du fait le
-    # plus dur au choix le plus révisable :
-    #     fournisseur arrêté > arrêt fabricant > écarté > sans catalogue
+    # The order is THAT OF THE REASON, so that the sheet an item sits in
+    # always matches the label it carries. From the hardest fact to the
+    # most revisable choice:
+    #     dropped supplier > discontinued > set aside > no catalogue
     arret = arret & ~fournisseur_arrete
     a_ecarter = (ecarte_dit | lourd | parque) & ~(fournisseur_arrete | arret)
     sans_catalogue = sans_catalogue & ~(fournisseur_arrete | arret
@@ -609,11 +616,11 @@ def main() -> None:
     })
 
     print(f"  {len(ecarte):>5}  Écarté "
-          f"({reste} sans prix, {len(ecarte) - reste} déjà valorisés)")
+          f"({reste} without a price, {len(ecarte) - reste} already priced)")
     for m, n in ecarte["Motif"].str.split(" :").str[0].value_counts().items():
         print(f"         {n:>5}  {m}")
     print(f"  {len(sans_catalogue):>5}  Sans catalogue "
-          f"({sans_catalogue['Fournisseur'].nunique()} fournisseurs)")
+          f"({sans_catalogue['Fournisseur'].nunique()} suppliers)")
     for f, n in sans_catalogue["Fournisseur"].replace(
             "", "(aucun fournisseur)").value_counts().head(10).items():
         print(f"         {n:>5}  {f}")
@@ -624,9 +631,9 @@ def main() -> None:
 
     orphelins = d[d["Origine du fournisseur"] == "introuvable"]
     repris = int((d["Origine du fournisseur"] == "fabricant (extract WMS)").sum())
-    print(f"\n  {repris} fournisseurs repris du fabricant (extract WMS)")
+    print(f"\n  {repris} suppliers taken from the manufacturer (WMS extract)")
     if len(orphelins):
-        print(f"  {len(orphelins)} sans aucun fournisseur NI fabricant :")
+        print(f"  {len(orphelins)} with no supplier NOR manufacturer at all:")
         for _, r in orphelins.iterrows():
             print(f"      {r['Code article']:<8} {r['Désignation']}")
 

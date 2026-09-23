@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Socle commun a tous les extracteurs de catalogues fournisseurs.
+Common foundation shared by every supplier catalogue extractor.
 
-Contient :
-  - le schema de sortie normalise (COLONNES)
-  - les helpers de nettoyage (texte, nombre, EAN)
-  - la validation de la cle de controle EAN-8 / EAN-13
-  - la detection automatique de la ligne d'en-tete dans un onglet Excel
+Provides:
+  - the normalised output schema (COLONNES)
+  - the cleaning helpers (text, number, EAN)
+  - EAN-8 / EAN-13 check digit validation
+  - automatic detection of the header row in an Excel sheet
 
-Chaque extracteur (extracteurs/<fournisseur>.py) doit exposer :
+Every extractor (extracteurs/<fournisseur>.py) must expose:
     extract(path) -> pandas.DataFrame
-respectant exactement COLONNES, dans cet ordre.
+matching COLONNES exactly, in that order.
 """
 
 from __future__ import annotations
@@ -24,68 +24,70 @@ from pathlib import Path
 import pandas as pd
 
 # ---------------------------------------------------------------------------
-# Schema de sortie normalise, identique pour tous les fournisseurs
+# Normalised output schema, identical for every supplier
 # ---------------------------------------------------------------------------
 
-# Les noms sont explicites a dessein : un prix dit toujours s'il est
-# unitaire ou par colis, un taux dit toujours qu'il est en decimal.
-# L'ordre compte : les colonnes utiles au quotidien viennent en premier.
+# The names are deliberately explicit: a price always says whether it is
+# per unit or per case, a rate always says it is stored as a decimal.
+# Order matters: the columns used day to day come first.
 COLONNES = [
-    "fournisseur",         # nom du fournisseur (ex: FOURNISSEUR A)
-    "ref_fournisseur",     # reference catalogue fournisseur (TOUJOURS du texte)
-    # Notre propre code article, quand le fichier fournisseur le porte.
-    # C'est rare — seuls les fichiers issus d'un rapprochement anterieur
-    # l'ont — mais c'est le lien le plus sur avec le WMS : il dispense de
-    # passer par la reference fournisseur, qui est justement ce qui
-    # diverge le plus souvent.
+    "fournisseur",         # supplier name (e.g. FOURNISSEUR A)
+    "ref_fournisseur",     # supplier catalogue reference (ALWAYS text)
+    # Our own item code, when the supplier file happens to carry it.
+    # That is rare (only files produced by an earlier reconciliation have
+    # it) but it is the safest link to the WMS: it removes the need to go
+    # through the supplier reference, which is precisely the identifier
+    # that diverges most often.
     "code_article_wms",
-    "designation",         # libelle produit
-    "ean",                 # code EAN de l'UNITE DE VENTE (toujours du texte)
-    # Beaucoup de tarifs publient deux codes : celui de la piece et celui
-    # du colis (Fournisseur AE "Unite"/"CDT", Fournisseur T "sachet"/"carton",
-    # Fournisseur CV va jusqu'a trois : unite, boite, carton). `ean` porte toujours
-    # l'unite de vente — c'est elle qu'on scanne au picking ; le code du
-    # colis est garde a part, il sert a la reception.
+    "designation",         # product label
+    "ean",                 # EAN of the SELLING UNIT (always text)
+    # Many price lists publish two codes: one for the piece and one for
+    # the case (Supplier AE "Unite"/"CDT", Supplier T "sachet"/"carton",
+    # Supplier CV goes as far as three: unit, box, carton). `ean` always
+    # carries the selling unit, the one scanned at picking; the case code
+    # is kept separately, it is used at goods-in.
     "ean_conditionnement",
-    # --- prix d'achat -------------------------------------------------------
-    "prix_achat_unitaire_ht",  # prix d'achat d'UNE unite, HT
-    # Intitule EXACT de la colonne d'ou sort ce prix, tel qu'il est ecrit
-    # dans le tarif. Un tarif publie souvent trois prix cote a cote —
-    # public, remise, au colis — et se tromper de colonne ne provoque
-    # aucune erreur : juste un PA faux. C'est la seule facon de verifier
-    # apres coup qu'on a pris le bon.
+    # --- purchase price -----------------------------------------------------
+    "prix_achat_unitaire_ht",  # purchase price of ONE unit, excl. VAT
+    # EXACT heading of the column this price came from, spelled as it is
+    # written in the price list. A price list often publishes three prices
+    # side by side (list, discounted, per case) and picking the wrong
+    # column raises no error at all: it just yields a wrong purchase
+    # price. This is the only way to check afterwards that we took the
+    # right one.
     "colonne_prix",
-    "conditionnement",         # nombre d'unites par colis
+    "conditionnement",         # number of units per case
     "prix_colis_ht",           # prix_achat_unitaire_ht x conditionnement
-    "conditionnement_suppose",  # True si le conditionnement etait absent -> 1
-    # --- construction du prix, pour le controle de marge --------------------
-    "tarif_public_ttc",    # tarif public conseille, TTC (jamais HT)
-    "tva_taux",            # taux de TVA en DECIMAL (0.2 = 20 %)
-    "remise_taux",         # taux de remise en DECIMAL, applique sur le HT
+    "conditionnement_suppose",  # True if the pack size was missing -> 1
+    # --- how the price is built, for the margin check -----------------------
+    "tarif_public_ttc",    # recommended retail price, incl. VAT (never net)
+    "tva_taux",            # VAT rate as a DECIMAL (0.2 = 20 %)
+    "remise_taux",         # discount rate as a DECIMAL, applied to the net
     "prix_recalcule",      # (tarif_public_ttc / (1 + tva)) x (1 - remise)
     "ecart_prix",          # |prix_recalcule - prix_achat_unitaire_ht|
-    "prix_coherent",       # True si l'ecart est inferieur a TOLERANCE_PRIX
-    # --- paliers degressifs : ce sont des PRIX UNITAIRES, pas des prix de lot
-    "palier2_qte",         # a partir de cette quantite, le prix unitaire...
-    "palier2_prix_ht",     # ... tombe a cette valeur
-    "economie_palier2_pct",  # economie unitaire vs prix de base, en decimal
+    "prix_coherent",       # True if the gap is below TOLERANCE_PRIX
+    # --- volume tiers: these are UNIT PRICES, not lot prices ----------------
+    "palier2_qte",         # from this quantity on, the unit price...
+    "palier2_prix_ht",     # ... drops to this value
+    "economie_palier2_pct",  # unit saving vs base price, as a decimal
     "palier3_qte",
     "palier3_prix_ht",
     "economie_palier3_pct",
-    "paliers",             # resume lisible : "1:30.40 | 6:28.70 | 75:17.60"
-    # --- caracteristiques produit ------------------------------------------
-    "eco_part_ht",         # eco-participation HT
-    "code_lppr",           # code LPPR si present (texte)
-    "montant_lppr",        # montant LPPR si present
-    "dispositif_medical",  # O / N
-    "origine",             # pays d'origine
-    "fichier_source",      # nom du fichier d'ou vient la ligne
+    "paliers",             # readable summary: "1:30.40 | 6:28.70 | 75:17.60"
+    # --- product attributes -------------------------------------------------
+    "eco_part_ht",         # eco-contribution, excl. VAT
+    "code_lppr",           # LPPR reimbursement code if present (text)
+    "montant_lppr",        # LPPR amount if present
+    "dispositif_medical",  # Y / N (medical device)
+    "origine",             # country of origin
+    "fichier_source",      # name of the file the row came from
 ]
 
-# Ecart tolere entre le prix net du fichier et le prix recalcule (en euros).
+# Tolerated gap between the net price in the file and the recomputed
+# price, in euros.
 TOLERANCE_PRIX = 0.05
 
-# Colonnes qui doivent rester du texte a l'ecriture Excel
+# Columns that must stay text when written to Excel
 COLONNES_TEXTE = [
     "fournisseur",
     "ref_fournisseur",
@@ -101,9 +103,9 @@ COLONNES_TEXTE = [
     "fichier_source",
 ]
 
-# Colonnes numeriques (float). Aucun arrondi n'est applique ici : les
-# montants restent en pleine precision et ne sont arrondis qu'a l'affichage,
-# par le format de cellule Excel.
+# Numeric columns (float). No rounding is applied here: amounts stay at
+# full precision and are only rounded for display, by the Excel cell
+# format.
 COLONNES_NUM = [
     "prix_achat_unitaire_ht",
     "conditionnement",
@@ -123,23 +125,23 @@ COLONNES_NUM = [
     "montant_lppr",
 ]
 
-# Colonnes booleennes
+# Boolean columns
 COLONNES_BOOL = ["prix_coherent", "conditionnement_suppose"]
 
 
 # ---------------------------------------------------------------------------
-# Lecture des fichiers sources
+# Reading the source files
 # ---------------------------------------------------------------------------
 
 def chemin_lisible(path) -> Path:
-    """Chemin exploitable pour lire un classeur, meme ouvert dans Excel.
+    """A usable path to read a workbook, even one open in Excel.
 
-    Excel pose un verrou exclusif sur les fichiers ouverts : toute lecture
-    echoue alors en PermissionError, ce qui interrompt tout le traitement
-    pour une raison sans rapport avec les donnees. La copie, elle, reste
-    autorisee : on travaille donc sur un double temporaire.
+    Excel takes an exclusive lock on open files: any read then fails with
+    PermissionError, which aborts the whole run for a reason that has
+    nothing to do with the data. Copying, however, is still allowed, so we
+    work on a temporary duplicate.
 
-    Renvoie le chemin d'origine quand il est lisible directement.
+    Returns the original path when it can be read directly.
     """
     path = Path(path)
     try:
@@ -150,20 +152,20 @@ def chemin_lisible(path) -> Path:
 
     copie = Path(tempfile.gettempdir()) / f"catalogue_verrouille_{path.name}"
     shutil.copy2(path, copie)
-    print(f"    (fichier ouvert dans Excel, lecture d'une copie temporaire)")
+    print(f"    (file open in Excel, reading a temporary copy)")
     return copie
 
 
 # ---------------------------------------------------------------------------
-# Helpers de nettoyage
+# Cleaning helpers
 # ---------------------------------------------------------------------------
 
 def nettoyer_texte(valeur) -> str | None:
-    """Convertit n'importe quelle cellule en texte propre, ou None si vide.
+    """Turns any cell into clean text, or None when empty.
 
-    Point important : les references et les EAN arrivent parfois d'Excel sous
-    forme de float (812176.0, 3.760123e+12). On repasse en entier avant de
-    stringifier pour ne pas trainer un '.0' ou une notation scientifique.
+    Important detail: references and EANs sometimes come out of Excel as
+    floats (812176.0, 3.760123e+12). We convert back to an integer before
+    stringifying, so no stray '.0' or scientific notation is carried over.
     """
     if valeur is None:
         return None
@@ -171,25 +173,25 @@ def nettoyer_texte(valeur) -> str | None:
         # NaN
         if valeur != valeur:
             return None
-        # float entier -> on enleve le .0 parasite
+        # whole float -> drop the stray .0
         if valeur.is_integer():
             return str(int(valeur))
         return repr(valeur)
     if isinstance(valeur, int):
         return str(valeur)
     texte = str(valeur).strip()
-    # Espaces insecables et doubles espaces issus des exports Excel
+    # Non-breaking and doubled spaces left behind by Excel exports
     texte = texte.replace(" ", " ")
     texte = re.sub(r"\s+", " ", texte)
     return texte or None
 
 
 def nettoyer_nombre(valeur) -> float | None:
-    """Convertit une cellule en float, ou None si non convertible / vide.
+    """Turns a cell into a float, or None if empty / not convertible.
 
-    Gere le separateur decimal virgule au cas ou (certains catalogues
-    exportent les prix en texte francais), les symboles monetaires, les
-    espaces de milliers et les pourcentages ecrits '20 %' -> 0.2.
+    Handles the comma decimal separator just in case (some catalogues
+    export prices as French text), currency symbols, thousands spaces and
+    percentages written '20 %' -> 0.2.
     """
     if valeur is None:
         return None
@@ -205,7 +207,7 @@ def nettoyer_nombre(valeur) -> float | None:
         return None
 
     pourcentage = "%" in texte
-    # On ne garde que ce qui peut composer un nombre
+    # Keep only what can make up a number
     texte = texte.replace(" ", "").replace(" ", "")
     texte = texte.replace("€", "").replace("%", "")
     texte = texte.replace(",", ".")
@@ -220,25 +222,25 @@ def nettoyer_nombre(valeur) -> float | None:
 
 
 def nettoyer_ean(valeur) -> str | None:
-    """Normalise un code EAN en TEXTE.
+    """Normalises an EAN code into TEXT.
 
-    - passe par nettoyer_texte pour tuer la notation scientifique
-    - retire tout ce qui n'est pas un chiffre (tirets, espaces)
-    - recomplete les zeros de tete perdus par Excel :
-        11 ou 12 chiffres -> 13 (cas des UPC-A americains, dont le ou les
-        zeros de tete sautent systematiquement a l'export)
-        7 chiffres        -> 8
-      Le zero-padding n'est applique que si la cle de controle devient
-      correcte, sinon on garde la valeur telle quelle pour ne pas masquer
-      une vraie erreur de saisie.
-    - ramene a l'EAN-13 les GTIN-14 dont l'indicateur de colisage est 0 :
-      un tel code ne designe pas un carton mais l'unite de vente, ecrite
-      sur quatorze positions. La cle est la meme de part et d'autre, le
-      zero de tete ne pesant rien dans la somme ponderee.
-    - ecarte ce qui est trop court pour etre un code-barres (cellules a
-      "0", restes de mise en page)
-    Ne fait AUCUN filtrage de validite : elle est evaluee separement par
-    ean_est_valide() pour pouvoir la signaler sans supprimer la ligne.
+    - runs through nettoyer_texte to kill scientific notation
+    - strips everything that is not a digit (hyphens, spaces)
+    - restores the leading zeros Excel dropped:
+        11 or 12 digits -> 13 (US UPC-A codes, whose leading zero or
+        zeros are systematically lost on export)
+        7 digits        -> 8
+      Zero-padding is only applied if it makes the check digit come out
+      right; otherwise the value is kept as is, so that a genuine data
+      entry error is not hidden.
+    - folds back to EAN-13 the GTIN-14 codes whose packaging indicator is
+      0: such a code does not designate a carton but the selling unit,
+      written over fourteen positions. The check digit is the same on
+      both sides, a leading zero weighing nothing in the weighted sum.
+    - discards anything too short to be a barcode (cells holding "0",
+      layout leftovers)
+    Performs NO validity filtering: validity is assessed separately by
+    ean_est_valide(), so it can be reported without dropping the row.
     """
     texte = nettoyer_texte(valeur)
     if texte is None:
@@ -256,13 +258,13 @@ def nettoyer_ean(valeur) -> str | None:
         if cle_controle_ean(candidat) == int(candidat[-1]):
             return candidat
     elif len(chiffres) == 14 and chiffres[0] == "0":
-        # Indicateur 0 : unite de vente, pas colisage
+        # Indicator 0: selling unit, not a packaging level
         candidat = chiffres[1:]
         if cle_controle_ean(candidat) == int(candidat[-1]):
             return candidat
 
-    # En dessous de huit chiffres, aucun code-barres n'existe : c'est une
-    # cellule vide ou un residu, pas une donnee a signaler.
+    # Below eight digits no barcode exists: this is an empty cell or a
+    # leftover, not data worth reporting.
     if len(chiffres) < 8:
         return None
 
@@ -270,16 +272,16 @@ def nettoyer_ean(valeur) -> str | None:
 
 
 def cle_controle_ean(chiffres: str) -> int | None:
-    """Calcule la cle de controle attendue pour un EAN-8 ou EAN-13.
+    """Computes the expected check digit for an EAN-8 or EAN-13.
 
-    Algorithme standard GS1 : somme ponderee 3/1 en partant de la droite
-    (hors cle), puis complement a la dizaine superieure.
+    Standard GS1 algorithm: 3/1 weighted sum starting from the right
+    (excluding the check digit), then complement to the next ten.
     """
     if not chiffres or not chiffres.isdigit() or len(chiffres) not in (8, 12, 13, 14):
         return None
     corps = chiffres[:-1]
     somme = 0
-    # Le poids alterne 3 puis 1 en remontant depuis le dernier chiffre du corps
+    # The weight alternates 3 then 1, going back from the last body digit
     for position, caractere in enumerate(reversed(corps)):
         poids = 3 if position % 2 == 0 else 1
         somme += int(caractere) * poids
@@ -287,37 +289,40 @@ def cle_controle_ean(chiffres: str) -> int | None:
 
 
 def ean_est_valide(ean) -> bool:
-    """True si l'EAN a une longueur 8 ou 13 ET une cle de controle correcte.
+    """True if the EAN is 8 or 13 digits long AND its check digit is right.
 
-    Un GTIN-14 (code de colisage) est volontairement considere comme NON
-    valide ici : il est syntaxiquement correct mais ne designe pas l'unite
-    de vente, ce n'est donc pas ce qu'on veut injecter dans le WMS.
-    diagnostic_ean() permet de le distinguer d'une vraie erreur.
+    A GTIN-14 (packaging code) is deliberately treated as NOT valid here:
+    it is syntactically correct but does not designate the selling unit,
+    so it is not what we want to push into the WMS. diagnostic_ean()
+    tells it apart from a genuine error.
     """
     if not ean or not isinstance(ean, str):
         return False
     if not ean.isdigit() or len(ean) not in (8, 13):
         return False
-    # « 0000000000000 » passe la cle de controle : une somme nulle est
-    # divisible par dix. C'est pourtant une case vide remplie au clavier,
-    # pas un code — le tarif du Fournisseur I en porte 48, dont 34 auraient
-    # ECRASE un vrai code dans le WMS. La cle prouve la coherence d'un
-    # nombre, jamais qu'il designe un produit.
+    # "0000000000000" passes the check digit: a zero sum is divisible by
+    # ten. It is nonetheless an empty box filled in by hand, not a code:
+    # Supplier I's price list carries 48 of them, 34 of which would have
+    # OVERWRITTEN a real code in the WMS. The check digit proves that a
+    # number is internally consistent, never that it names a product.
     if set(ean) == {"0"}:
         return False
     return cle_controle_ean(ean) == int(ean[-1])
 
 
 def diagnostic_ean(ean) -> str:
-    """Explique pourquoi un EAN est refuse, pour rendre le rapport actionnable.
+    """Explains why an EAN is rejected, to make the report actionable.
 
-    Renvoie une chaine courte parmi :
-      "OK"                      -> EAN-8 / EAN-13 avec cle correcte
-      "absent"
-      "caracteres non numeriques"
-      "GTIN-14 (colisage), cle correcte" -> code carton, pas l'unite de vente
-      "longueur N inattendue"
-      "cle de controle incorrecte (attendue X)"
+    Returns one short string among (values kept verbatim, they end up in
+    the quality report):
+      "OK"                      -> EAN-8 / EAN-13 with a valid check digit
+      "absent"                  -> missing
+      "caracteres non numeriques" -> non-numeric characters
+      "GTIN-14 (colisage), cle correcte" -> carton code, not the selling
+                                            unit
+      "longueur N inattendue"   -> unexpected length N
+      "cle de controle incorrecte (attendue X)" -> wrong check digit,
+                                                   X expected
     """
     if ean is None or not isinstance(ean, str) or ean == "":
         return "absent"
@@ -330,7 +335,7 @@ def diagnostic_ean(ean) -> str:
     if longueur == 14:
         if cle_attendue != int(ean[-1]):
             return "longueur 14 et cle incorrecte"
-        # L'indicateur de tete distingue le carton de l'unite de vente
+        # The leading indicator tells the carton from the selling unit
         if ean[0] == "0":
             return "GTIN-14 d'unite (a ramener en EAN-13)"
         return "GTIN-14 (colisage), cle correcte"
@@ -346,27 +351,28 @@ def diagnostic_ean(ean) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Logique tarifaire
+# Pricing logic
 # ---------------------------------------------------------------------------
 #
-# Chaine de calcul du tarif fournisseur, verifiee sur le tarif 2026 du
-# Fournisseur A :
+# The supplier price computation chain, verified against Supplier A's 2026
+# price list:
 #
 #     prix_ht_public = tarif_public_ttc / (1 + tva_taux)
 #     prix_achat     = prix_ht_public * (1 - remise_taux)
 #
-# Exemples : 480,00 / 1,20 = 400,00 ; x (1 - 0,30000) = 280,00   # valeurs d'exemple
-#            527,50 / 1,055 = 500,00 ; x (1 - 0,40000) = 300,00  # valeurs d'exemple
+# Examples: 480.00 / 1.20 = 400.00 ; x (1 - 0.30000) = 280.00   # sample values
+#           527.50 / 1.055 = 500.00 ; x (1 - 0.40000) = 300.00  # sample values
 #
-# Le tarif public de la colonne 3 est TTC, jamais HT. C'est la source
-# d'erreur numero un sur ce fichier.
+# The list price in column 3 includes VAT, never excludes it. That is the
+# number one source of error on this file.
 
 def normaliser_conditionnement(valeur) -> tuple[float, bool]:
-    """Conditionnement exploitable, et indicateur de valeur supposee.
+    """A usable pack size, plus a flag saying the value was assumed.
 
-    Un conditionnement vide, nul, negatif ou non numerique est ramene a 1
-    (on considere alors que le produit se commande a l'unite), et le second
-    element du retour vaut True pour garder la trace de cette hypothese.
+    A pack size that is empty, zero, negative or non-numeric is brought
+    back to 1 (the product is then taken to be ordered by the unit), and
+    the second element of the return is True so the assumption stays on
+    record.
     """
     nombre = nettoyer_nombre(valeur)
     if nombre is None or nombre <= 0:
@@ -375,10 +381,10 @@ def normaliser_conditionnement(valeur) -> tuple[float, bool]:
 
 
 def calculer_prix_colis(prix_unitaire_ht, conditionnement) -> float | None:
-    """Prix d'un colis complet : prix unitaire x nombre d'unites par colis.
+    """Price of a full case: unit price x number of units per case.
 
-    Aucun arrondi : la valeur reste en pleine precision, l'arrondi est du
-    ressort du format d'affichage Excel.
+    No rounding: the value stays at full precision, rounding is the job
+    of the Excel display format.
     """
     if prix_unitaire_ht is None or conditionnement is None:
         return None
@@ -388,15 +394,15 @@ def calculer_prix_colis(prix_unitaire_ht, conditionnement) -> float | None:
 def controler_coherence_prix(
     tarif_public_ttc, tva_taux, remise_taux, prix_achat_unitaire_ht
 ) -> tuple[float | None, float | None, bool | None]:
-    """Recalcule le prix d'achat theorique et le compare au prix du fichier.
+    """Recomputes the theoretical purchase price and compares it to the file.
 
-    Renvoie (prix_recalcule, ecart absolu, coherent). Un ecart superieur a
-    TOLERANCE_PRIX signale soit une erreur du fournisseur, soit un cas
-    particulier (prix negocie hors grille) : dans les deux cas la ligne doit
-    etre verifiee avant de servir de base a une commande.
+    Returns (prix_recalcule, absolute gap, coherent). A gap larger than
+    TOLERANCE_PRIX signals either a supplier error or a special case (a
+    negotiated price outside the grid): in both cases the row must be
+    checked before an order is based on it.
 
-    Renvoie (None, None, None) quand une des valeurs necessaires manque :
-    on ne peut alors ni confirmer ni infirmer la coherence.
+    Returns (None, None, None) when one of the required values is
+    missing: coherence can then be neither confirmed nor denied.
     """
     if (
         tarif_public_ttc is None
@@ -413,18 +419,18 @@ def controler_coherence_prix(
 
 
 def valider_paliers(prix_unitaire, paliers) -> list:
-    """Ne retient que les paliers qui en sont vraiment.
+    """Keeps only the tiers that really are tiers.
 
-    Un palier degressif suppose deux choses : une quantite superieure a 1,
-    et un prix inferieur au prix unitaire. Tout ce qui ne remplit pas ces
-    conditions est une AUTRE colonne de prix — le plus souvent le prix
-    public conseille, que le fournisseur publie a cote de son prix net.
+    A volume tier implies two things: a quantity above 1, and a price
+    below the unit price. Anything that fails those conditions is ANOTHER
+    price column, most often the recommended retail price, which the
+    supplier publishes next to its net price.
 
-    Confondre les deux ferait apparaitre des "remises" negatives et
-    fausserait toute l'analyse d'achat par quantite.
+    Confusing the two would produce negative "discounts" and would skew
+    the whole quantity-based purchasing analysis.
 
-    `paliers` est une liste de couples (quantite, prix). Le retour est la
-    meme liste, filtree et triee par quantite croissante.
+    `paliers` is a list of (quantity, price) pairs. The return is the same
+    list, filtered and sorted by increasing quantity.
     """
     if prix_unitaire is None or prix_unitaire <= 0:
         return []
@@ -439,10 +445,10 @@ def valider_paliers(prix_unitaire, paliers) -> list:
 
 
 def economie_palier(prix_base, prix_palier) -> float | None:
-    """Economie unitaire d'un palier par rapport au prix de base, en decimal.
+    """Unit saving of a tier against the base price, as a decimal.
 
-    Une valeur negative signale un palier plus cher que le prix de base,
-    c'est-a-dire une anomalie du tarif fournisseur.
+    A negative value signals a tier that is more expensive than the base
+    price, that is, an anomaly in the supplier price list.
     """
     if prix_base is None or prix_palier is None or prix_base <= 0:
         return None
@@ -450,17 +456,16 @@ def economie_palier(prix_base, prix_palier) -> float | None:
 
 
 def resumer_paliers(prix_unitaire, paliers, quantite_base=1) -> str | None:
-    """Resume lisible de la grille degressive : "1:30.40 | 6:28.70 | 75:17.60".
+    """Readable summary of the tier grid: "1:30.40 | 6:28.70 | 75:17.60".
 
-    `paliers` est une liste de couples (quantite seuil, prix unitaire a ce
-    palier). Format destine a la lecture humaine uniquement : les colonnes
-    palier2_qte / palier2_prix_ht restent la source pour tout calcul.
+    `paliers` is a list of (threshold quantity, unit price at that tier)
+    pairs. This format is for human reading only: the palier2_qte /
+    palier2_prix_ht columns remain the source for any computation.
 
-    `quantite_base` est la quantite a partir de laquelle le prix unitaire
-    s'applique. Elle vaut 1 dans la plupart des tarifs, mais certains ne
-    cotent qu'a partir d'un lot (le Fournisseur L demarre a 20 sur des
-    cannes) :
-    afficher "1:" serait alors trompeur.
+    `quantite_base` is the quantity from which the unit price applies. It
+    is 1 in most price lists, but some only quote from a lot upwards
+    (Supplier L starts at 20 on walking sticks): printing "1:" would then
+    be misleading.
     """
     if prix_unitaire is None:
         return None
@@ -480,11 +485,12 @@ def resumer_paliers(prix_unitaire, paliers, quantite_base=1) -> str | None:
 
 
 def anomalies_paliers(prix_base, palier2, palier3) -> list[str]:
-    """Verifie la coherence de la grille degressive.
+    """Checks the internal consistency of the tier grid.
 
-    `palier2` et `palier3` sont des couples (quantite, prix unitaire).
-    Une grille saine est strictement decroissante en prix quand la quantite
-    augmente. Renvoie la liste des anomalies constatees, vide si tout va bien.
+    `palier2` and `palier3` are (quantity, unit price) pairs. A sound grid
+    is strictly decreasing in price as the quantity rises. Returns the
+    list of anomalies found (French wording, it goes straight into the
+    quality report), empty when all is well.
     """
     anomalies = []
     q2, p2 = palier2
@@ -507,49 +513,49 @@ def anomalies_paliers(prix_base, palier2, palier3) -> list[str]:
 
 
 def prix_pour_quantite(ligne, quantite: int) -> dict:
-    """Meilleur tarif applicable pour une quantite donnee.
+    """Best applicable price for a given quantity.
 
-    `ligne` est une ligne du catalogue (dict ou Series pandas) au schema
-    commun. La quantite demandee est arrondie au multiple superieur du
-    conditionnement : on ne peut pas commander 3 unites d'un produit vendu
-    par 6. Le palier retenu est ensuite choisi d'apres la quantite
-    reellement commandee, pas d'apres celle demandee.
+    `ligne` is a catalogue row (dict or pandas Series) following the
+    common schema. The requested quantity is rounded up to the next
+    multiple of the pack size: you cannot order 3 units of a product sold
+    by 6. The tier is then picked from the quantity actually ordered, not
+    from the one requested.
 
-    Renvoie :
-        prix_unitaire_ht    prix unitaire du palier applique
+    Returns:
+        prix_unitaire_ht    unit price of the applied tier
         total_ht            prix_unitaire_ht x quantite_commandee
-        palier_applique     "base", "palier 2" ou "palier 3"
-        quantite_demandee   la quantite passee en argument
-        quantite_commandee  apres arrondi au conditionnement
-        arrondi_conditionnement  True si la quantite a du etre relevee
-        conditionnement     conditionnement retenu
+        palier_applique     "base", "palier 2" or "palier 3"
+        quantite_demandee   the quantity passed as an argument
+        quantite_commandee  after rounding up to the pack size
+        arrondi_conditionnement  True if the quantity had to be raised
+        conditionnement     the pack size used
     """
     def valeur(champ):
-        """Lecture tolerante : dict, Series pandas, valeurs NaN."""
+        """Lenient read: dict, pandas Series, NaN values."""
         brut = ligne[champ] if champ in ligne else None
         if brut is None or (isinstance(brut, float) and brut != brut):
             return None
         return brut
 
     if quantite is None or quantite <= 0:
-        raise ValueError("La quantite doit etre un entier strictement positif")
+        raise ValueError("The quantity must be a strictly positive integer")
 
     prix_base = valeur("prix_achat_unitaire_ht")
     if prix_base is None:
         raise ValueError(
-            f"Prix unitaire absent pour la reference {valeur('ref_fournisseur')}"
+            f"No unit price for reference {valeur('ref_fournisseur')}"
         )
 
     conditionnement, _ = normaliser_conditionnement(valeur("conditionnement"))
 
-    # On ne commande que des colis entiers
-    nb_colis = -(-quantite // conditionnement)  # division entiere par exces
+    # Only whole cases can be ordered
+    nb_colis = -(-quantite // conditionnement)  # ceiling integer division
     quantite_commandee = nb_colis * conditionnement
     arrondi = quantite_commandee != quantite
 
-    # Le meilleur palier atteint par la quantite reellement commandee.
-    # On parcourt dans l'ordre croissant des seuils et on garde le dernier
-    # atteint, ce qui reste correct meme si la grille est mal ordonnee.
+    # The best tier reached by the quantity actually ordered. We walk the
+    # thresholds in increasing order and keep the last one reached, which
+    # stays correct even if the grid is badly ordered.
     prix_unitaire = prix_base
     palier_applique = "base"
     candidats = [
@@ -576,14 +582,14 @@ def prix_pour_quantite(ligne, quantite: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Normalisation des references, pour le rapprochement avec la base du WMS
+# Reference normalisation, for matching against the WMS database
 # ---------------------------------------------------------------------------
 
 def cle_ref_stricte(valeur) -> str | None:
-    """Cle de rapprochement stricte : majuscules, sans espaces.
+    """Strict matching key: upper case, no spaces.
 
-    Le '.0' final est retire : il apparait des qu'une reference purement
-    numerique a transite par un type flottant.
+    The trailing '.0' is stripped: it appears as soon as a purely numeric
+    reference has passed through a float type.
     """
     texte = nettoyer_texte(valeur)
     if texte is None:
@@ -595,12 +601,12 @@ def cle_ref_stricte(valeur) -> str | None:
 
 
 def cle_ref_souple(valeur) -> str | None:
-    """Cle de rapprochement souple : en plus, sans separateurs . - _ /
+    """Lenient matching key: as above, plus no . - _ / separators.
 
-    Indispensable ici : le WMS stocke les declinaisons avec un point
-    (123456.M, 789012.B) la ou le catalogue fournisseur les colle
-    (123456M, 789012N). Cette seule tolerance fait gagner ~250
-    rapprochements sur le Fournisseur A.
+    Indispensable here: the WMS stores variants with a dot (123456.M,
+    789012.B) where the supplier catalogue runs them together (123456M,
+    789012N). That single tolerance alone gains about 250 matches on
+    Supplier A.
     """
     texte = cle_ref_stricte(valeur)
     if texte is None:
@@ -610,22 +616,22 @@ def cle_ref_souple(valeur) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Detection de la ligne d'en-tete
+# Header row detection
 # ---------------------------------------------------------------------------
 
 def _normaliser(texte: str) -> str:
-    """Minuscule sans accent ni ponctuation, pour comparer des en-tetes."""
+    """Lower case, no accents, no punctuation, to compare headings."""
     texte = unicodedata.normalize("NFKD", texte)
     texte = "".join(c for c in texte if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", "", texte.lower())
 
 
 def trouver_entete_df(brut, mots_cles, max_lignes: int = 60) -> int | None:
-    """Meme recherche que trouver_ligne_entete, mais sur un DataFrame brut.
+    """Same search as trouver_ligne_entete, but on a raw DataFrame.
 
-    Renvoie l'index (0-based, pandas) de la premiere ligne contenant tous
-    les mots-cles, ou None. Utile quand le fichier a ete lu avec
-    `header=None` plutot qu'ouvert via openpyxl.
+    Returns the index (0-based, pandas) of the first row containing all
+    the keywords, or None. Useful when the file was read with
+    `header=None` rather than opened through openpyxl.
     """
     cles = [_normaliser(m) for m in mots_cles]
     for position in range(min(max_lignes, len(brut))):
@@ -640,11 +646,11 @@ def trouver_entete_df(brut, mots_cles, max_lignes: int = 60) -> int | None:
 
 
 def colonne_par_intitule(entetes, *fragments: str) -> int | None:
-    """Position de la premiere colonne dont l'intitule contient un fragment.
+    """Position of the first column whose heading contains a fragment.
 
-    Les intitules des tarifs sont souvent sur plusieurs lignes et truffes
-    de fautes ("Descirption"), d'ou la comparaison sur fragment normalise
-    plutot que sur egalite.
+    Price list headings often span several lines and are riddled with
+    typos ("Descirption"), hence the comparison on a normalised fragment
+    rather than on equality.
     """
     cibles = [_normaliser(fragment) for fragment in fragments]
     for position, intitule in enumerate(entetes):
@@ -655,13 +661,13 @@ def colonne_par_intitule(entetes, *fragments: str) -> int | None:
 
 
 def trouver_ligne_entete(feuille, mots_cles, max_lignes: int = 60) -> int:
-    """Renvoie le numero (1-based, openpyxl) de la ligne d'en-tete.
+    """Returns the number (1-based, openpyxl) of the header row.
 
-    On cherche la PREMIERE ligne qui contient tous les mots-cles donnes
-    (comparaison insensible a la casse et aux accents). Cela evite de coder
-    en dur un offset qui differera d'un catalogue a l'autre.
+    We look for the FIRST row that contains all the given keywords
+    (comparison insensitive to case and accents). This avoids hard-coding
+    an offset that would differ from one catalogue to the next.
 
-    Leve ValueError si rien n'est trouve dans les `max_lignes` premieres.
+    Raises ValueError if nothing is found in the first `max_lignes` rows.
     """
     cles = [_normaliser(m) for m in mots_cles]
     for ligne in feuille.iter_rows(min_row=1, max_row=max_lignes, values_only=False):
@@ -669,20 +675,20 @@ def trouver_ligne_entete(feuille, mots_cles, max_lignes: int = 60) -> int:
         if all(any(cle in cellule for cellule in cellules) for cle in cles):
             return ligne[0].row
     raise ValueError(
-        f"Ligne d'en-tete introuvable (mots-cles cherches : {mots_cles})"
+        f"Header row not found (keywords searched: {mots_cles})"
     )
 
 
 # ---------------------------------------------------------------------------
-# Finalisation du DataFrame
+# Finalising the DataFrame
 # ---------------------------------------------------------------------------
 
 def finaliser(lignes: list[dict]) -> pd.DataFrame:
-    """Construit le DataFrame final : colonnes dans l'ordre + bons types.
+    """Builds the final DataFrame: columns in order, with the right types.
 
-    Les colonnes texte sont forcees en 'object' avec des vraies chaines,
-    jamais des nombres, pour que l'ecriture Excel conserve les zeros de tete
-    et les references alphanumeriques (ex: 123456N).
+    Text columns are forced to 'object' holding real strings, never
+    numbers, so that writing to Excel preserves leading zeros and
+    alphanumeric references (e.g. 123456N).
     """
     df = pd.DataFrame(lignes, columns=COLONNES)
 
@@ -692,8 +698,8 @@ def finaliser(lignes: list[dict]) -> pd.DataFrame:
     for colonne in COLONNES_NUM:
         df[colonne] = pd.to_numeric(df[colonne], errors="coerce")
 
-    # Les booleens restent en 'object' : prix_coherent vaut None quand la
-    # coherence n'a pas pu etre evaluee, ce qu'un dtype bool ecraserait.
+    # Booleans stay 'object': prix_coherent is None when coherence could
+    # not be assessed, which a bool dtype would flatten away.
     for colonne in COLONNES_BOOL:
         df[colonne] = df[colonne].astype("object")
 

@@ -1,60 +1,60 @@
 # -*- coding: utf-8 -*-
 """
-Quand un code venu d'EUDAMED mérite qu'on le garde.
+When a code coming from EUDAMED is worth keeping.
 
-EUDAMED n'est pas en cause : la façon dont on l'a interrogé l'est. On lui
-a soumis la référence de l'article, et le registre rend le dispositif qui
-porte cette référence — chez N'IMPORTE QUEL fabricant d'Europe. Une
-référence à quatre chiffres en désigne des centaines.
+EUDAMED is not at fault: the way we queried it is. We submitted the
+article's reference, and the registry returns the device carrying that
+reference, at ANY manufacturer in Europe. A four-digit reference
+designates hundreds of them.
 
-Ce que cela donne dans le fichier, sans rien inventer :
+What that gives in the file, with nothing made up:
 
-    CHAUSSURE MODELE-B 39  → réf « 2975 » → 5012345678900
-    CHAUSSURE MODELE-B 40  → réf « 2975 » → 5012345678900
-    CHAUSSURE MODELE-B 41  → réf « 2975 » → 5012345678900
+    CHAUSSURE MODELE-B 39  -> ref. "2975" -> 5012345678900
+    CHAUSSURE MODELE-B 40  -> ref. "2975" -> 5012345678900
+    CHAUSSURE MODELE-B 41  -> ref. "2975" -> 5012345678900
 
-Trois pointures sous un seul code, préfixe britannique sur une chaussure
-française.
+Three shoe sizes under a single code, and a British prefix on a French
+shoe.
 
-La mesure
----------
-Chaque code confronté au préfixe GS1 relevé dans le tarif du MÊME
-fournisseur (V16, 557 codes testables) :
+The measurement
+---------------
+Every code confronted with the GS1 prefix found in the price list of the
+SAME supplier (V16, 557 testable codes):
 
-    référence de 3 caractères    28 codes     0 % de concordance
-                 4                23          4 %
-                 5                27          7 %
-                 6               148         11 %
-                 7               111         30 %
-                 8               114          8 %
-                 9 et plus        96         96 %
+    reference of 3 characters    28 codes     0 % agreement
+                 4               23           4 %
+                 5               27           7 %
+                 6              148          11 %
+                 7              111          30 %
+                 8              114           8 %
+                 9 and above     96          96 %
 
-La rupture est franche et ne doit rien au hasard : au-delà de neuf
-caractères une référence est distinctive, elle ne ramène qu'un dispositif
-et c'est le bon. En deçà, c'est une loterie.
+The break is sharp and owes nothing to chance: beyond nine characters a
+reference is distinctive, it brings back a single device and it is the
+right one. Below that, it is a lottery.
 
-Le test a un biais qu'il faut connaître : EUDAMED indexe le FABRICANT, et
-un fournisseur qui distribue sans fabriquer portera légitimement un
-préfixe étranger. Ce biais joue contre EUDAMED plus que contre les autres
-sources — mais il n'explique ni le 0 % à trois caractères, ni le saut à
-96 % dès qu'on passe neuf.
+The test has a bias worth knowing about: EUDAMED indexes the
+MANUFACTURER, and a supplier that distributes without manufacturing will
+legitimately carry a foreign prefix. That bias works against EUDAMED
+more than against the other sources, but it explains neither the 0 % at
+three characters nor the jump to 96 % as soon as nine is passed.
 
-Ce que la règle NE fait pas
-----------------------------
-Elle ne supprime rien. Les codes écartés partent dans
-`perimetre/retours/`, d'où l'on pourra les reprendre le jour où on saura
-les vérifier. Elle ne touche pas non plus « EAN distributeur - Vn.xlsx », qui
-reste le journal de ce que la chaîne a produit : c'est à la SORTIE, dans
-ce qu'on lit et dans ce qu'on emporte en entrepôt, que le tri se fait.
+What the rule does NOT do
+-------------------------
+It deletes nothing. The discarded codes go to `perimetre/retours/`, from
+where they can be picked up again the day we know how to check them. It
+does not touch "EAN distributeur - Vn.xlsx" either, which stays the log
+of what the pipeline produced: the sorting happens on the way OUT, in
+what gets read and what gets taken to the warehouse.
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
-# Neuf, parce que c'est là que la mesure bascule — pas parce que c'est un
-# chiffre rond. Le relâcher à 8 ferait rentrer 114 codes à 8 % de
-# concordance.
+# Nine, because that is where the measurement tips over, not because it
+# is a round number. Relaxing it to 8 would let in 114 codes at 8 %
+# agreement.
 LONGUEUR_MINIMALE = 9
 
 SOURCE = "eudamed"
@@ -64,7 +64,7 @@ MOTIF = (f"référence de moins de {LONGUEUR_MINIMALE} caractères : EUDAMED "
 
 
 def reference_fiable(reference) -> bool:
-    """Cette référence était-elle assez distinctive pour interroger EUDAMED ?"""
+    """Was this reference distinctive enough to query EUDAMED with?"""
     if reference is None or (isinstance(reference, float) and pd.isna(reference)):
         return False
     return len(str(reference).strip()) >= LONGUEUR_MINIMALE
@@ -72,10 +72,10 @@ def reference_fiable(reference) -> bool:
 
 def douteux(df: pd.DataFrame, colonne_source: str = "Source",
             colonne_reference: str = "Réf. fournisseur") -> pd.Series:
-    """Les lignes dont le code vient d'EUDAMED sur une référence trop courte.
+    """The rows whose code comes from EUDAMED on too short a reference.
 
-    Rend un masque, jamais un cadre tronqué : à l'appelant de décider s'il
-    écarte, s'il déclasse ou s'il se contente de compter.
+    Returns a mask, never a truncated frame: it is up to the caller to
+    decide whether to discard, to downgrade, or simply to count.
     """
     if colonne_source not in df.columns:
         return pd.Series(False, index=df.index)

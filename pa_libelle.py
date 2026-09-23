@@ -1,47 +1,48 @@
 # -*- coding: utf-8 -*-
 """
-Chantier PA — proposer un prix par rapprochement de libellé.
+PA workstream: propose a price through label matching.
 
-    python pa_libelle.py --calibrer      mesure le seuil sur des cas connus
-    python pa_libelle.py FOURNISSEUR_E   propose, pour un fournisseur
-    python pa_libelle.py                 tout le périmètre non rapproché
+    python pa_libelle.py --calibrer      measures the threshold on known cases
+    python pa_libelle.py FOURNISSEUR_E   proposes, for one supplier
+    python pa_libelle.py                 the whole unmatched scope
 
-LE PLUS DANGEREUX DES TROIS CHANTIERS
-    Le responsable des prix a testé le libellé EXACT sur ses 514 non
-    rapprochés : six récupérations.
-    Tout le gain est donc dans l'approximatif — et l'approximatif, sur du
-    matériel médical, se trompe de taille, de côté ou de coloris sans le dire.
+THE MOST DANGEROUS OF THE THREE WORKSTREAMS
+    The price owner tested the EXACT label on his 514 unmatched articles:
+    six recoveries.
+    All of the gain is therefore in approximate matching, and approximate
+    matching, on medical devices, gets the size, the side or the colour
+    wrong without saying so.
 
-CE QUI EST RÉUTILISÉ
-    `par_libelle.py` fait déjà le plus dur et l'a payé cher : normalisation,
-    retrait de la marque, mots vides, et surtout les DISCRIMINANTS — c'est lui
-    qui a appris que « MODELE EXEMPLE 1 LIGHT » n'est pas « EXTRA Light » et
-    que vingt fauteuils de la GAMME EXEMPLE 1 avaient hérité du code d'un
-    modèle bariatrique.
-    On garde sa règle : un discriminant présent d'un seul côté REJETTE le
-    candidat, il ne l'arbitre pas.
+WHAT IS REUSED
+    `par_libelle.py` already does the hard part and paid dearly for it:
+    normalisation, brand removal, stop words, and above all the
+    DISCRIMINANTS. It is the module that learned that "MODELE EXEMPLE 1
+    LIGHT" is not "EXTRA Light" and that twenty chairs of the GAMME
+    EXEMPLE 1 range had inherited the code of a bariatric model.
+    We keep its rule: a discriminant present on one side only REJECTS the
+    candidate, it does not arbitrate between candidates.
 
-CE QUE CE MODULE AJOUTE
-    1. UNICITÉ. Le deuxième meilleur candidat doit être nettement derrière —
-       huit points d'écart. Deux candidats à égalité, ce n'est pas un tirage au
-       sort, c'est un non-rapprochement. `par_libelle` ne purgeait l'ambiguïté
-       qu'APRÈS coup, quand un même code atterrissait sur plusieurs articles ;
-       ici on refuse de choisir dès qu'il y a doute.
-    2. SIMILARITÉ PAR JETONS, en plus de la part de nos mots retrouvée.
-       `token_set_ratio` supporte l'ordre des mots et les libellés de longueurs
-       très différentes, ce que les catalogues font tout le temps.
-    3. CORROBORATION PAR LE PRIX. Jamais comme clé — choisir la ligne dont le
-       prix ressemble le plus à l'ancien PA serait circulaire, et fabriquerait
-       le FAUX ÉCART au lieu de le détecter. Uniquement comme contre-épreuve
-       d'un candidat déjà trouvé par le libellé.
-    4. NIVEAUX DE CONFIANCE, et une sortie de relecture.
+WHAT THIS MODULE ADDS
+    1. UNIQUENESS. The runner-up must be clearly behind: eight points of
+       gap. Two candidates level with each other is not a coin toss, it is
+       a non-match. `par_libelle` only purged ambiguity AFTERWARDS, when
+       the same code landed on several articles; here we refuse to choose
+       as soon as there is doubt.
+    2. TOKEN SIMILARITY, on top of the share of our words found.
+       `token_set_ratio` tolerates word order and labels of very different
+       lengths, which is what catalogues do all the time.
+    3. CORROBORATION BY THE PRICE. Never as a key: picking the line whose
+       price most resembles the old PA would be circular, and would
+       manufacture the FALSE GAP instead of detecting it. Only as a
+       counter-check on a candidate already found through the label.
+    4. CONFIDENCE LEVELS, and a review output.
 
-CE QUI NE SORT JAMAIS D'ICI
-    Un prix. Ce module écrit des PROPOSITIONS dans un classeur de relecture,
-    avec le score, le libellé du tarif et le libellé du WMS en regard. Rien ne
-    part dans pa_injectable.xlsx sans validation humaine — même règle que les
-    références proches chez le responsable des prix : signalées, jamais
-    appliquées.
+WHAT NEVER LEAVES THIS MODULE
+    A price. This module writes PROPOSALS into a review workbook, with the
+    score, the price list label and the WMS label side by side. Nothing
+    goes into pa_injectable.xlsx without human validation - the same rule
+    as the near-miss references at the price owner's end: reported, never
+    applied.
 """
 
 from __future__ import annotations
@@ -62,44 +63,44 @@ except ImportError:  # pragma: no cover
     fuzz = None
 
 
-# --- seuils -----------------------------------------------------------------
-# Le brief visait 92 « à calibrer sur des cas connus, pas à choisir au jugé ».
-# La calibration a tranché autrement, et c'est elle qui fait foi.
+# --- thresholds -------------------------------------------------------------
+# The brief aimed at 92, "to be calibrated on known cases, not picked by
+# feel". Calibration decided otherwise, and calibration is what counts.
 #
-# Mesuré sur les articles déjà rapprochés par référence exacte, où la bonne
-# réponse est connue (`--calibrer`) :
+# Measured on the articles already matched by exact reference, where the
+# right answer is known (`--calibrer`):
 #
-#   seuil      FOURNISSEUR E            FOURNISSEUR A
-#     84    18 justes /  0 faux     340 justes / 14 faux   précision 0,960
-#     88    14 justes /  0 faux     335 justes / 13 faux   précision 0,963
-#     92     0 justes /  0 faux     329 justes / 13 faux   précision 0,962
+#   threshold  FOURNISSEUR E            FOURNISSEUR A
+#     84    18 right /  0 wrong     340 right / 14 wrong   precision 0.960
+#     88    14 right /  0 wrong     335 right / 13 wrong   precision 0.963
+#     92     0 right /  0 wrong     329 right / 13 wrong   precision 0.962
 #
-# 92 ne rapproche plus RIEN chez le Fournisseur E — précisément le fournisseur
-# pour lequel le libellé est la seule voie, son tarif ne portant pas de
-# référence exploitable. 88 garde ses 14 appariements sans un seul faux, et ne
-# coûte que cinq appariements chez le Fournisseur A.
+# At 92 NOTHING matches at Supplier E any more - precisely the supplier for
+# which the label is the only route, since its price list carries no usable
+# reference. 88 keeps its 14 matches without a single wrong one, and costs
+# only five matches at Supplier A.
 #
-# Noter surtout que la précision ne bouge quasiment pas avec le seuil (0,960 à
-# 84, 0,962 à 96) : le seuil n'est PAS le levier qui élimine les erreurs. Les
-# faux restants ont un score élevé — ce sont des produits réellement proches
-# dont aucun discriminant ne capte la différence. Seule la relecture les voit.
+# Note above all that precision barely moves with the threshold (0.960 at
+# 84, 0.962 at 96): the threshold is NOT the lever that removes errors. The
+# remaining wrong matches score high - they are genuinely close products
+# that no discriminant catches. Only review sees them.
 SEUIL_SCORE = 88
 ECART_UNICITE = 8
 
-# Corroboration par le prix : bornes du brief.
+# Corroboration by the price: bounds taken from the brief.
 CORROBORE = (0.80, 1.25)
 PLAUSIBLE = (0.50, 2.00)
 
 
 def modele(libelle, marque=None) -> str:
-    """Le libellé débarrassé de ce qui distingue les déclinaisons.
+    """The label stripped of whatever tells variants apart.
 
-    On rapproche sur le MODÈLE seul. Les discriminants — taille, côté,
-    coloris, quantité — ne servent pas à ressembler, ils servent à rejeter :
-    « MODELE EXEMPLE 2 T3 DROIT » et « MODELE EXEMPLE 2 T4 DROIT » sont
-    identiques à 95 % et
-    ne sont pas le même produit. Les mêler au score reviendrait à récompenser
-    la ressemblance là où il faut exiger l'identité.
+    We match on the MODEL alone. Discriminants - size, side, colour,
+    quantity - are not there to resemble, they are there to reject:
+    "MODELE EXEMPLE 2 T3 DROIT" and "MODELE EXEMPLE 2 T4 DROIT" are 95%
+    identical and
+    are not the same product. Mixing them into the score would amount to
+    rewarding resemblance where identity must be required.
     """
     normalise = par_libelle._normaliser(libelle)
     prefixe = par_libelle._normaliser(marque) if marque else ""
@@ -109,34 +110,34 @@ def modele(libelle, marque=None) -> str:
              if mot not in par_libelle.DISCRIMINANTS
              and mot not in par_libelle.MOTS_VIDES
              and not mot.isdigit()]
-    # ESSAI REJETÉ — ne pas refaire sans mesurer. Tronquer chaque mot à cinq
-    # caractères (par_libelle.RACINE) pour réconcilier « CEINT » et
-    # « CEINTURE » paraît évident : les deux catalogues abrègent différemment
-    # le même produit. Mesuré sur les articles déjà rapprochés par référence,
-    # c'est pourtant PIRE — la précision tombe de 1,000 à 0,805 chez le
-    # Fournisseur E et de 0,960 à 0,955 chez le Fournisseur A. La troncature gagne
-    # quelques appariements et en invente davantage. On garde les mots entiers.
+    # ATTEMPT REJECTED - do not try again without measuring. Truncating each
+    # word to five characters (par_libelle.RACINE) to reconcile "CEINT" and
+    # "CEINTURE" looks obvious: the two catalogues abbreviate the same
+    # product differently. Measured on the articles already matched by
+    # reference, it is in fact WORSE - precision falls from 1.000 to 0.805
+    # at Supplier E and from 0.960 to 0.955 at Supplier A. Truncation wins
+    # a few matches and invents more. We keep whole words.
     return " ".join(garde)
 
 
 def score_modele(a: str, b: str) -> float:
-    """Similarité par jetons entre deux modèles, de 0 à 100."""
+    """Token similarity between two models, from 0 to 100."""
     if not a or not b:
         return 0.0
     if fuzz is None:
-        # Repli sans rapidfuzz : part des jetons communs. Moins fin, mais le
-        # module doit rester utilisable sur un poste sans la bibliothèque.
+        # Fallback without rapidfuzz: share of common tokens. Cruder, but
+        # the module has to stay usable on a machine without the library.
         ja, jb = set(a.split()), set(b.split())
         return 100.0 * len(ja & jb) / max(len(ja | jb), 1)
     return float(fuzz.token_set_ratio(a, b))
 
 
 def discriminants_compatibles(libelle_wms, libelle_tarif, marque=None) -> bool:
-    """Les discriminants doivent être IDENTIQUES, pas ressemblants.
+    """Discriminants must be IDENTICAL, not similar.
 
-    Présent d'un côté et absent de l'autre : le candidat est rejeté, pas
-    arbitré. C'est la règle qui coûte le plus de rappel et qui évite le plus
-    d'erreurs.
+    Present on one side and absent on the other: the candidate is rejected,
+    not arbitrated. This is the rule that costs the most recall and avoids
+    the most errors.
     """
     d_wms = par_libelle.discriminants(libelle_wms, marque)
     d_tarif = par_libelle.discriminants(libelle_tarif)
@@ -155,10 +156,10 @@ def discriminants_compatibles(libelle_wms, libelle_tarif, marque=None) -> bool:
 
 def meilleur_candidat(libelle_wms, lignes: list[dict], marque=None,
                       seuil=SEUIL_SCORE, ecart=ECART_UNICITE) -> dict | None:
-    """Le seul candidat acceptable, ou rien — avec le motif du refus.
+    """The single acceptable candidate, or nothing, with the reason why.
 
-    Trois conditions cumulatives : score au-delà du seuil, unicité, et
-    discriminants identiques.
+    Three cumulative conditions: score above the threshold, uniqueness, and
+    identical discriminants.
     """
     mon_modele = modele(libelle_wms, marque)
     if len(mon_modele.split()) < 2:
@@ -184,7 +185,8 @@ def meilleur_candidat(libelle_wms, lignes: list[dict], marque=None,
         return {"retenu": None,
                 "motif": f"meilleur score {premier:.0f} < seuil {seuil}"}
     if (premier - second) < ecart:
-        # Leçon du FAUX ÉCART corrigé le 13/08 : à égalité, on ne tire pas au sort.
+        # Lesson of the FALSE GAP fixed on 13/08: at a tie, we do not draw
+        # lots.
         return {"retenu": None,
                 "motif": f"candidats trop proches ({premier:.0f} contre "
                          f"{second:.0f}) — ambiguïté, pas de rapprochement"}
@@ -193,18 +195,18 @@ def meilleur_candidat(libelle_wms, lignes: list[dict], marque=None,
 
 
 def corroborer_par_prix(prix_candidat, dpa) -> tuple[str, str]:
-    """Le candidat trouvé par le libellé résiste-t-il au rapport avec le DPA ?
+    """Does the candidate found by the label survive its ratio to the DPA?
 
-    Le prix ne CHOISIT jamais le candidat — ce serait circulaire, et l'écart
-    serait nul par construction. Il ne fait que confirmer ou infirmer un
-    candidat déjà trouvé autrement.
+    The price never CHOOSES the candidate - that would be circular, and the
+    gap would be zero by construction. It only confirms or contradicts a
+    candidate already found some other way.
     """
     if prix_candidat is None or pd.isna(prix_candidat):
         return "", "pas de prix au candidat"
     if dpa is None or pd.isna(dpa) or dpa <= 0:
-        # Le garde-fou ne fonctionne que s'il existe un ancien prix. Sur un
-        # article jamais acheté, aucun contrôle n'est possible, et le candidat
-        # ne doit pas ressortir avec la même confiance qu'un candidat corroboré.
+        # The guard rail only works when an old price exists. On an article
+        # that was never bought, no check is possible, and the candidate
+        # must not come out with the same confidence as a corroborated one.
         return "PROPOSÉ", "aucun DPA : corroboration impossible"
     rapport = float(prix_candidat) / float(dpa)
     if CORROBORE[0] <= rapport <= CORROBORE[1]:
@@ -212,7 +214,7 @@ def corroborer_par_prix(prix_candidat, dpa) -> tuple[str, str]:
     if PLAUSIBLE[0] <= rapport <= PLAUSIBLE[1]:
         return "À RELIRE", (f"plausible (×{rapport:.2f}) — relecture "
                             f"obligatoire")
-    # Au-delà, un diviseur de conditionnement peut encore l'expliquer.
+    # Beyond that, a pack divisor may still explain it.
     try:
         import pa_conditionnement
         facteur = pa_conditionnement.entier_rond_le_plus_proche(rapport)
@@ -229,24 +231,24 @@ def corroborer_par_prix(prix_candidat, dpa) -> tuple[str, str]:
 
 
 def calibrer(motif: str, seuils=(84, 88, 90, 92, 94, 96)) -> pd.DataFrame:
-    """Mesure le seuil sur des cas dont on connaît déjà la réponse.
+    """Measures the threshold on cases whose answer is already known.
 
-    Les articles rapprochés par RÉFÉRENCE exacte donnent un jeu d'épreuve
-    gratuit : on sait quelle ligne du tarif est la bonne. On leur cache la
-    référence, on ne leur laisse que le libellé, et on regarde si le
-    rapprochement retrouve la même ligne. C'est la seule façon de choisir un
-    seuil autrement qu'au jugé.
+    Articles matched by EXACT reference provide a free test set: we know
+    which price list line is the right one. We hide the reference from
+    them, leave them only the label, and see whether matching finds the
+    same line again. It is the only way to pick a threshold other than by
+    feel.
     """
     import pa_completer as P
 
     articles = P.articles_du_perimetre(motif)
     if articles.empty:
-        print("aucun article pour ce fournisseur")
+        print("no article for this supplier")
         return pd.DataFrame()
     noms = tuple(sorted(articles["Nom fournisseur"].dropna().unique()))
     tarif = P.tarif_du_fournisseur(motif, noms)
     if tarif.empty or "designation" not in tarif.columns:
-        print("aucun tarif exploitable")
+        print("no usable price list")
         return pd.DataFrame()
 
     from extracteurs.base import cle_ref_stricte
@@ -260,7 +262,7 @@ def calibrer(motif: str, seuils=(84, 88, 90, 92, 94, 96)) -> pd.DataFrame:
     articles["cle"] = articles["ref_fournisseur_wms"].map(cle_ref_stricte)
     cles_tarif = set(tarif["cle"].dropna())
     connus = articles[articles["cle"].isin(cles_tarif)]
-    print(f"jeu d'épreuve : {len(connus)} articles rapprochés par référence")
+    print(f"test set: {len(connus)} articles matched by reference")
     if connus.empty:
         return pd.DataFrame()
 
@@ -290,11 +292,11 @@ def calibrer(motif: str, seuils=(84, 88, 90, 92, 94, 96)) -> pd.DataFrame:
 
 
 def proposer(motif: str) -> pd.DataFrame:
-    """Les candidats d'un fournisseur, pour relecture — aucun prix appliqué.
+    """One supplier's candidates, for review - no price applied.
 
-    On ne travaille que sur les articles qu'aucune des cinq clés n'a rapprochés
-    et dont le fournisseur a bien un tarif : ailleurs, le libellé n'a rien à
-    apporter que les clés n'aient déjà donné, plus sûrement.
+    We only work on the articles that none of the five keys matched and
+    whose supplier does have a price list: anywhere else, the label has
+    nothing to add that the keys have not already given, more reliably.
     """
     import pa_completer as P
     from extracteurs.base import cle_ref_stricte
@@ -319,7 +321,7 @@ def proposer(motif: str) -> pd.DataFrame:
             "fichier": r.get("fichier_tarif"),
         })
 
-    # Ce qu'aucune clé n'a rapproché
+    # Whatever no key matched
     articles = articles.copy()
     articles["cle"] = articles["ref_fournisseur_wms"].map(cle_ref_stricte)
     articles["cle_fab"] = articles["ref_fabricant"].map(cle_ref_stricte)
@@ -366,26 +368,26 @@ def proposer(motif: str) -> pd.DataFrame:
 
 
 def ecrire_relecture(tables: list[pd.DataFrame]) -> Path | None:
-    """Le classeur de relecture, trié pour que le temps humain paie."""
+    """The review workbook, sorted so that human time pays off."""
     import mise_en_forme
     from main import SORTIE_ACHATS
 
     utiles = [t for t in tables if not t.empty]
     if not utiles:
-        print("aucun candidat")
+        print("no candidate")
         return None
     tout = pd.concat(utiles, ignore_index=True)
     retenus = tout[tout["Niveau"].isin(("À RELIRE", "PROPOSÉ"))].copy()
     rejets = tout[~tout["Niveau"].isin(("À RELIRE", "PROPOSÉ"))]
 
     if not retenus.empty:
-        # Un même libellé de tarif proposé à PLUSIEURS de nos articles est un
-        # libellé générique, pas une correspondance. « Canne anglaise » se voit
-        # attribuer quatre cannes d'une même GAMME EXEMPLE 2 de coloris
-        # différents : au plus une est
-        # la bonne, et rien ne dit laquelle. C'est la leçon de
-        # par_libelle.purger_doublons, appliquée ici en amont — on ne purge pas
-        # en silence, on le dit en colonne pour que la relecture le voie.
+        # One price list label proposed for SEVERAL of our articles is a
+        # generic label, not a match. "Canne anglaise" gets assigned to four
+        # crutches of the same GAMME EXEMPLE 2 range in different colours:
+        # at most one is
+        # right, and nothing says which. This is the lesson of
+        # par_libelle.purger_doublons, applied here upstream - we do not
+        # purge silently, we say it in a column so that review sees it.
         partages = retenus["Libellé tarif"].value_counts()
         retenus["Candidat partagé"] = retenus["Libellé tarif"].map(partages)
         trop = retenus["Candidat partagé"] > 1
@@ -393,12 +395,12 @@ def ecrire_relecture(tables: list[pd.DataFrame]) -> Path | None:
             retenus.loc[trop, "Motif"] + " — ATTENTION : ce libellé de tarif est "
             "proposé à " + retenus.loc[trop, "Candidat partagé"].astype(str)
             + " articles, il est trop générique pour les distinguer")
-        # Un candidat partagé retombe au niveau le plus bas, quelle que soit sa
-        # corroboration par le prix.
+        # A shared candidate falls back to the lowest level, whatever its
+        # corroboration by the price.
         retenus.loc[trop, "Niveau"] = "PROPOSÉ"
 
-        # Le temps de relecture va d'abord là où il rapporte : ce qui se vend,
-        # puis ce qui coûte cher. Les candidats fiables d'abord.
+        # Review time goes first where it pays: what sells, then what costs
+        # a lot. Reliable candidates first.
         retenus["_sur"] = retenus["Niveau"].eq("À RELIRE")
         retenus["_vend"] = retenus["VENTE_12M"].fillna(False).astype(bool)
         retenus = retenus.sort_values(
@@ -422,7 +424,7 @@ def ecrire_relecture(tables: list[pd.DataFrame]) -> Path | None:
             "sous_titre": "Le motif dit pourquoi : score trop bas, ambiguïté, "
                           "ou discriminants différents"},
     })
-    print(f"  {len(retenus)} à relire, {len(rejets)} sans candidat")
+    print(f"  {len(retenus)} to review, {len(rejets)} without a candidate")
     print(f"  -> {chemin}")
     return chemin
 
@@ -430,23 +432,23 @@ def ecrire_relecture(tables: list[pd.DataFrame]) -> Path | None:
 def main() -> None:
     args = [a for a in sys.argv[1:]]
     if fuzz is None:
-        print("! rapidfuzz absent : score de repli par jetons communs")
+        print("! rapidfuzz missing: falling back to a common-token score")
     if "--calibrer" in args:
         args.remove("--calibrer")
         motif = args[0] if args else "FOURNISSEUR_E"
-        print(f"Calibration du seuil sur {motif}\n")
+        print(f"Threshold calibration on {motif}\n")
         table = calibrer(motif)
         if not table.empty:
             pd.set_option("display.width", 200)
             print(table.to_string(index=False))
             print()
-            print("Lire : « Faux » est le seul chiffre qui coûte cher. Un prix")
-            print("faux et silencieux est pire qu'un article sans prix.")
+            print("How to read this: \"Faux\" is the only figure that costs")
+            print("money. A wrong, silent price is worse than no price.")
         return
     cibles = args or ["FOURNISSEUR_E", "FOURNISSEUR_A", "FOURNISSEUR_S",
                       "FOURNISSEUR_Q", "FOURNISSEUR_AQ"]
-    print(f"Rapprochement par libellé — seuil {SEUIL_SCORE}, "
-          f"écart d'unicité {ECART_UNICITE}\n")
+    print(f"Label matching - threshold {SEUIL_SCORE}, "
+          f"uniqueness gap {ECART_UNICITE}\n")
     tables = []
     for motif in cibles:
         print(f"--- {motif}")
@@ -456,7 +458,7 @@ def main() -> None:
             print(f"    ! {type(err).__name__} : {err}")
     ecrire_relecture(tables)
     print()
-    print("Rien n'est injecté. Ces candidats attendent une relecture humaine.")
+    print("Nothing is injected. These candidates await human review.")
 
 
 if __name__ == "__main__":

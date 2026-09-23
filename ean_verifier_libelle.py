@@ -1,103 +1,106 @@
 # -*- coding: utf-8 -*-
 """
-Confronte au libelle les codes EUDAMED obtenus sur une reference courte.
+Checks EUDAMED codes obtained on a short reference against the label.
 
-    python ean_verifier_libelle.py             reprend ou il s'etait arrete
-    python ean_verifier_libelle.py --perimetre le perimetre fige d'abord
-    python ean_verifier_libelle.py --etat      ou en est-on ?
-    python ean_verifier_libelle.py --essai 20  s'arrete apres 20 references
+    python ean_verifier_libelle.py             resumes where it stopped
+    python ean_verifier_libelle.py --perimetre the frozen scope first
+    python ean_verifier_libelle.py --etat      where do we stand?
+    python ean_verifier_libelle.py --essai 20  stops after 20 references
 
-`--perimetre` ramene la collecte de 19 h a 8 h en n'interrogeant que les
-articles du perimetre fige — ceux dont le code sert vraiment. Le cache
-etant commun, elargir ensuite ne rejoue rien de ce qui est fait.
+`--perimetre` brings the collection down from 19 h to 8 h by querying
+only the articles of the frozen scope, the ones whose code is really
+used. The cache being shared, widening the scope afterwards replays
+nothing that is already done.
 
-Sortie : wms_extracts/.cache_eudamed_libelle/resultats.json
-         sortie/2-chantier-ean/eudamed_verification_libelle.xlsx
+Output: wms_extracts/.cache_eudamed_libelle/resultats.json
+        sortie/2-chantier-ean/eudamed_verification_libelle.xlsx
 
-Le probleme
+The problem
 -----------
-`eudamed_par_reference.py` interroge le registre sur le seul parametre
-`reference`, SANS filtre fabricant, et retient le PREMIER dispositif
-rendu dont le primaryDi est un EAN valide. Rien ne verifie que ce
-dispositif est le notre.
+`eudamed_par_reference.py` queries the registry on the `reference`
+parameter alone, WITHOUT a manufacturer filter, and keeps the FIRST
+device returned whose primaryDi is a valid EAN. Nothing checks that this
+device is ours.
 
-Mesure du 14/09 : la reference « 7300 » (une ceinture 58 cm du
-fournisseur BZ) rend 1 080 dispositifs, dont le premier est un tube
-d'injection du fournisseur CA. La reference « 2975 » en rend 909, dont le
-premier est une paire de lunettes de lecture italienne. Confrontes au
-prefixe GS1 du tarif du
-meme fournisseur, les codes ainsi obtenus ne concordent qu'a 27,8 %,
-contre 100 % pour un code lu dans un tarif.
+Measured on 14/09: the reference "7300" (a 58 cm belt from supplier BZ)
+returns 1 080 devices, the first of which is an injection tube from
+supplier CA. The reference "2975" returns 909, the first of which is a
+pair of Italian reading glasses. Confronted with the GS1 prefix of the
+same supplier's price list, the codes obtained this way agree only
+27.8 % of the time, against 100 % for a code read in a price list.
 
-1 321 codes de V16 sont dans ce cas — 90,8 % de ce qu'EUDAMED a rendu.
+1 321 codes in V16 are in that situation, 90.8 % of what EUDAMED
+returned.
 
-Le libelle, seule caracteristique commune
------------------------------------------
-Nous n'avons pas le SRN des fabricants, et le registre n'accepte pas de
-filtre sur leur nom (`manufacturerName` est ignore : la reponse reste
-identique). En revanche `tradeName` est un VRAI filtre, en sous-chaine et
-insensible a la casse, et il se combine avec `reference` cote serveur.
+The label, the only characteristic we have in common
+----------------------------------------------------
+We do not have the manufacturers' SRN, and the registry accepts no
+filter on their name (`manufacturerName` is ignored: the answer stays
+identical). `tradeName`, on the other hand, is a REAL filter, as a
+substring and case-insensitive, and it combines with `reference` on the
+server side.
 
-C'est ce qui change tout : l'absence devient demontrable. Demander
-« reference=2950 ET tradeName=MODELE-B » interroge tout le registre et
-rend zero — ce n'est plus une deduction tiree des cent premiers resultats
-sur neuf cents, c'est un constat.
+That is what changes everything: absence becomes demonstrable. Asking
+"reference=2950 AND tradeName=MODELE-B" queries the whole registry and
+returns zero. That is no longer a deduction drawn from the first hundred
+of nine hundred results, it is a fact.
 
-Et la meme requete repare autant qu'elle verifie. « reference=3000DBM ET
-tradeName=DETACHABLE » rend deux dispositifs du fournisseur AH, dont
-« Detachable Battery Module » — notre libelle mot pour mot, alors que le
-code retenu jusqu'ici venait d'ailleurs.
+And the same request repairs as much as it verifies. "reference=3000DBM
+AND tradeName=DETACHABLE" returns two devices from supplier AH,
+including "Detachable Battery Module", our own label word for word,
+whereas the code kept until now came from somewhere else.
 
-Trois verdicts, jamais une correction d'office
------------------------------------------------
-    CONFIRME   un dispositif portant notre reference porte aussi notre
-               libelle, et son code est celui qu'on avait deja
-    CORRIGE    meme chose, mais le code differe : le notre etait faux et
-               celui-ci est propose EN COLONNE, pas ecrit dans V16
-    REJETE     aucun dispositif portant notre reference ne porte un
-               libelle proche du notre, sur aucun de nos mots
-    NON CONCLU le mot interroge n'etait pas assez distinctif (plus de
-               cent candidats, aucun concordant) — a rejuger a la main
-    NON TESTE  notre libelle n'offre aucun mot interrogeable
+Three verdicts, never an automatic correction
+---------------------------------------------
+    CONFIRME   a device carrying our reference also carries our label,
+               and its code is the one we already had
+    CORRIGE    same thing, but the code differs: ours was wrong and this
+               one is offered IN A COLUMN, not written into V16
+    REJETE     no device carrying our reference carries a label close to
+               ours, on any of our words
+    NON CONCLU the word queried was not distinctive enough (more than a
+               hundred candidates, none of them matching): to be judged
+               by hand
+    NON TESTE  our label offers no queryable word
 
-Ce script n'ecrit RIEN dans « EAN distributeur - Vn.xlsx », qui reste le
-journal de ce que la chaine a produit. Il produit un avis ; c'est
-`ean_fiable.py` et vous qui en tirez les consequences.
+This script writes NOTHING into "EAN distributeur - Vn.xlsx", which
+stays the log of what the pipeline produced. It produces an opinion; it
+is `ean_fiable.py` and you who draw the consequences.
 
-Choisir les mots a interroger
------------------------------
-Nos libelles sont francais, ceux du registre majoritairement anglais ou
-allemands. « CEINTURE », « CHAUSSURES », « FAUTEUIL » n'y figureront
-jamais : les interroger coute une minute pour rien. Ce sont les noms de
-modele qui passent — MODELE-A, MODELE-B, M300 — et eux seuls.
-D'ou `GENERIQUES`, a completer au fil des faux negatifs.
+Choosing the words to query
+---------------------------
+Our labels are French, the registry's are mostly English or German.
+"CEINTURE", "CHAUSSURES", "FAUTEUIL" will never appear there: querying
+them costs a minute for nothing. What does get through are the model
+names, MODELE-A, MODELE-B, M300, and those alone. Hence `GENERIQUES`,
+to be extended as false negatives show up.
 
-Mais une liste ecrite a la main ne couvrira jamais le vocabulaire
-medical, et l'oubli se paie en minutes. Le tri se fait donc sur la
-RARETE DANS NOS PROPRES LIBELLES, mesuree a chaque passe sur les
-15 178 designations du classeur : un mot qu'on emploie partout ne
-distingue rien, un mot qu'on emploie une fois est un nom de modele.
+But a hand-written list will never cover the medical vocabulary, and
+every omission is paid for in minutes. The sorting is therefore done on
+RARITY IN OUR OWN LABELS, measured on every pass over the 15 178
+descriptions of the workbook: a word we use everywhere distinguishes
+nothing, a word we use once is a model name.
 
-    GENOUILLERE ACTIVE MODELE-A S GA T5      MODELE-A   134 emplois
+    GENOUILLERE ACTIVE MODELE-A S GA T5      MODELE-A   134 uses
     CHAUSS. MODELE-B MARRON                  MODELE-B     1
     FAUTEUIL ROULANT FOURNISSEUR B M300 T42  M300        12
 
-Trier sur la longueur, comme je l'avais fait d'abord, mettait
-« GENOUILLERE » devant « MODELE-A » et brulait le premier appel. La
-longueur ne sert plus que de departage a frequence egale.
+Sorting on length, as I did at first, put "GENOUILLERE" ahead of
+"MODELE-A" and burned the first call. Length now only breaks ties at
+equal frequency.
 
-Un mot de couleur ne suffit jamais. Un essai sur « CHAUSS. MODELE-B
-MARRON » interroge sur MARRON a ramene une chaussure espagnole du
-fournisseur GA, a 0,50 de score. C'est tout l'interet de garder le seuil
-de `par_libelle` a 0,60 : ce rapprochement-la tombe de lui-meme.
+A colour word is never enough. A trial on "CHAUSS. MODELE-B MARRON"
+querying MARRON brought back a Spanish shoe from supplier GA, at a score
+of 0.50. That is exactly why `par_libelle`'s threshold is kept at 0.60:
+a match like that falls of its own accord.
 
-Le throttling
--------------
-Meme regle que la collecte par reference : un appel par minute. En
-dessous, EUDAMED repond 200 avec zero resultat au lieu d'un 429, et un
-echec devient indiscernable d'une absence — ce qui produirait exactement
-le faux dont on essaie de sortir. L'etat est enregistre apres chaque
-appel : une coupure coute au plus une requete.
+Throttling
+----------
+Same rule as the collection by reference: one call a minute. Below that,
+EUDAMED answers 200 with zero results instead of a 429, and a failure
+becomes indistinguishable from an absence, which would produce exactly
+the falsehood we are trying to get out of. The state is saved after
+every call: an interruption costs one request at most.
 """
 
 from __future__ import annotations
@@ -142,36 +145,36 @@ PAUSE = 60
 JITTER = 12
 TIMEOUT = 90
 
-# Cent candidats par appel : c'est le maximum que le registre accepte de
-# rendre d'un coup, verifie. Au-dela on paginerait, et une pagination a
-# une minute la page coute plus qu'elle ne rapporte : si cent dispositifs
-# portent notre reference ET un mot de notre libelle sans qu'aucun soit
-# le notre, c'est le mot qui n'etait pas distinctif, pas le registre qui
-# cache la reponse.
+# A hundred candidates per call: that is the maximum the registry agrees
+# to return at once, verified. Beyond that we would paginate, and
+# paginating at one minute a page costs more than it brings back: if a
+# hundred devices carry our reference AND a word of our label without any
+# of them being ours, it is the word that was not distinctive, not the
+# registry hiding the answer.
 TAILLE_PAGE = 100
 
-# Au-dela de trois mots, on interroge du vocabulaire courant et on paie
-# une minute par mot. Les trois plus longs suffisent : ce sont les noms
-# de modele.
+# Beyond three words we are querying everyday vocabulary and paying a
+# minute per word. The three longest are enough: those are the model
+# names.
 MOTS_MAXIMUM = 3
 
-# Le seuil de `par_libelle`, repris tel quel et volontairement non
-# relache. A 0,50, un rapprochement sur la seule couleur passe.
+# `par_libelle`'s threshold, taken as it is and deliberately not
+# relaxed. At 0.50, a match on colour alone gets through.
 SEUIL = par_libelle.SEUIL
 
-# Variantes commerciales d'un meme dispositif. `par_libelle` mesure la
-# part de NOS mots retrouvee chez l'autre, jamais les mots en trop — a
-# raison, les catalogues decrivent plus longuement que nous. Mais un mot
-# de cette liste present d'un seul cote ne decrit pas : il designe un
-# autre article commercial.
+# Commercial variants of one and the same device. `par_libelle` measures
+# the share of OUR words found in the other label, never the words in
+# excess, and rightly so: catalogues describe at greater length than we
+# do. But a word from this list present on one side only does not
+# describe: it designates a different commercial article.
 #
-# Le premier verdict reel l'a montre. « DETACHABLE BATTERY MODULE » a
-# recu, a 1,00 de score, « Detachable Battery Module, RENTAL » — le
-# module de location, pas celui qu'on vend.
+# The first real verdict showed it. "DETACHABLE BATTERY MODULE" received,
+# at a score of 1.00, "Detachable Battery Module, RENTAL", the rental
+# module, not the one we sell.
 #
-# On ne rejette pas pour autant : c'est peut-etre le bon code, le
-# registre n'ayant parfois qu'une declaration pour les deux. On le dit,
-# en colonne, et c'est vous qui tranchez.
+# We do not reject it for all that: it may well be the right code, the
+# registry sometimes holding a single declaration for both. We say so, in
+# a column, and you are the one who decides.
 VARIANTES_COMMERCIALES = {
     "RENTAL", "LOCATION", "DEMO", "DEMONSTRATION", "SAMPLE", "TRIAL",
     "REFURBISHED", "RECONDITIONNE", "SPARE", "REPLACEMENT", "RECHANGE",
@@ -179,9 +182,9 @@ VARIANTES_COMMERCIALES = {
     "REUSABLE", "SINGLEUSE",
 }
 
-# Vocabulaire francais qui n'a aucune chance de figurer dans un libelle
-# du registre. A completer : chaque mot ajoute ici economise une minute
-# par article qui le porte.
+# French vocabulary that stands no chance of appearing in a registry
+# label. To be extended: every word added here saves a minute per
+# article that carries it.
 GENERIQUES = {
     "CHAUSS", "CHAUSSURE", "CHAUSSURES", "CEINTURE", "CEINTURES",
     "PROTECTEUR", "PROTECTION", "CUTANE", "CUTANEE", "STANDARD",
@@ -201,17 +204,17 @@ GENERIQUES = {
 COLONNES_SOURCE = ["Code article", "Référence", "Désignation", "Fournisseur",
                    "Réf. fournisseur", "Code EAN", "Source", "Fiabilité"]
 
-# Fournisseurs qui nous ont envoye leur propre fichier de codes. On ne
-# les interroge PAS : leur reponse tient a 98 % au test du prefixe GS1,
-# EUDAMED a 27,8 %. Demander au registre ce que le fournisseur a deja
-# ecrit, c'est payer une minute pour une reponse moins bonne — et risquer
-# d'inscrire un code qui contredit la sienne.
+# Suppliers that sent us their own code file. We do NOT query them: their
+# answer holds at 98 % against the GS1 prefix test, EUDAMED at 27.8 %.
+# Asking the registry what the supplier has already written means paying
+# a minute for a worse answer, and risking recording a code that
+# contradicts theirs.
 #
-# Le classeur consolide `ean_fournisseurs.xlsx` nomme ces reponses par
-# FICHIER, pas par fournisseur : la correspondance ne peut pas s'en
-# deduire, elle s'ecrit ici. A completer a chaque reponse recue.
+# The consolidated workbook `ean_fournisseurs.xlsx` names those answers
+# by FILE, not by supplier: the correspondence cannot be derived from it,
+# it is written here. To be extended with every answer received.
 #
-# Le nom est celui du WMS, au caractere pres — releve dans V16.
+# The name is the WMS one, character for character, as found in V16.
 REPONSE_RECUE = {
     "FOURNISSEUR B": "fichier EAN.pdf — 65 codes fauteuils",
     "FOURNISSEUR L": "fournisseur_l - demande codes EAN.xlsx",
@@ -223,38 +226,37 @@ REPONSE_RECUE = {
     "FOURNISSEUR AU": "fournisseur_au - demande codes EAN.xlsx",
 }
 
-# Combien de nos libelles emploient chaque mot. Rempli par
-# `apprendre_frequences`, lu par `mots_a_interroger`.
+# How many of our labels use each word. Filled by
+# `apprendre_frequences`, read by `mots_a_interroger`.
 _FREQUENCES: dict[str, int] = {}
 
 
 def _derniere_version() -> Path:
-    """La version figee la plus recente.
+    """The most recent frozen version.
 
-    Trie sur le NUMERO, jamais sur le nom : l'ordre alphabetique place
-    « V9 » apres « V16 », et `pa_completer.py` se fait encore prendre par
-    la meme corde (son glob retient « EAN distributeur.xlsx », le fichier de
-    travail).
+    Sorts on the NUMBER, never on the name: alphabetical order puts "V9"
+    after "V16", and `pa_completer.py` still gets caught by that same
+    rope (its glob keeps "EAN distributeur.xlsx", the working file).
     """
     fichiers = sorted(
         SORTIE_CHANTIER.glob("EAN distributeur - V*.xlsx"),
         key=lambda p: int(re.search(r"- V(\d+)", p.name).group(1)),
     )
     if not fichiers:
-        raise SystemExit("Aucun fichier « EAN distributeur - Vn.xlsx ».")
+        raise SystemExit("No \"EAN distributeur - Vn.xlsx\" file found.")
     return fichiers[-1]
 
 
 def _empecher_la_veille() -> bool:
-    """Demande a Windows de ne pas s'endormir tant qu'on travaille.
+    """Asks Windows not to fall asleep while we are working.
 
-    Reprise telle quelle de `eudamed_par_reference.py` : une collecte qui
-    n'utilise ni clavier ni souris compte comme de l'inactivite, et le
-    poste s'endort au bout de quelques dizaines de minutes. Sur huit
-    heures, c'est la collecte entiere qu'on perd.
+    Taken as it is from `eudamed_par_reference.py`: a collection that
+    uses neither keyboard nor mouse counts as inactivity, and the machine
+    falls asleep after a few dozen minutes. Over eight hours, it is the
+    whole collection that is lost.
 
-    On ne demande PAS ES_DISPLAY_REQUIRED : l'ecran peut s'eteindre.
-    L'effet cesse avec le processus — rien a defaire.
+    We do NOT ask for ES_DISPLAY_REQUIRED: the screen can go off. The
+    effect ends with the process, nothing to undo.
     """
     if sys.platform != "win32":
         return False
@@ -265,8 +267,8 @@ def _empecher_la_veille() -> bool:
         return bool(ctypes.windll.kernel32.SetThreadExecutionState(
             ES_CONTINUOUS | ES_SYSTEM_REQUIRED))
     except Exception:
-        # Une politique de domaine peut le refuser : ce n'est pas une
-        # raison d'interrompre, seulement de le signaler.
+        # A domain policy may refuse it: that is no reason to stop, only
+        # to say so.
         return False
 
 
@@ -295,11 +297,11 @@ def _sans_accent(texte) -> str:
     return re.sub(r"[^A-Z0-9]+", " ", sans)
 
 
-# Mots trop repandus dans les raisons sociales du secteur pour designer
-# une marque. Sans ce filtre, « LABORATOIRE FOURNISSEUR I » et
-# « COMPRESSE MEDICALE » partageraient un mot qui n'identifie rien. Meme liste que
-# `pa_completer.MOTS_TROP_COURANTS`, recopiee plutot qu'importee : ce
-# module ne doit pas dependre du chantier PA.
+# Words too widespread in the sector's company names to designate a
+# brand. Without this filter, "LABORATOIRE FOURNISSEUR I" and "COMPRESSE
+# MEDICALE" would share a word that identifies nothing. Same list as
+# `pa_completer.MOTS_TROP_COURANTS`, copied rather than imported: this
+# module must not depend on the PA project.
 MOTS_TROP_COURANTS = {
     "CONFORT", "SANTE", "MEDICAL", "MEDICALE", "MEDICAUX", "FRANCE",
     "FRANCAISE", "SARL", "GROUPE", "LABORATOIRE", "LABORATOIRES",
@@ -308,19 +310,19 @@ MOTS_TROP_COURANTS = {
     "PRODUCT", "PRODUITS", "SOINS", "HEALTH", "CARE",
 }
 
-# Equivalences de taille entre notre notation et celle du registre.
+# Size equivalences between our notation and the registry's.
 #
-# Le garde-fou des mots discriminants de `par_libelle` empeche qu'une
-# taille L recoive le code d'une taille S — il est indispensable. Mais il
-# compare des CHAINES, et « MEDIUM » ne ressemble pas a « M » :
+# `par_libelle`'s discriminating-word guard stops a size L from receiving
+# the code of a size S, and it is indispensable. But it compares STRINGS,
+# and "MEDIUM" does not look like "M":
 #
 #     MARQUE-U SLIP GAMME-1 MEDIUM      vs   MARQUE-U Slip Gamme-1 M 3x21p
 #     MARQUE-U SLIP GAMME-2 EXTRA LARGE vs   MARQUE-U Slip Gamme-2 XL 3x21p
 #
-# Les deux rapprochements sont JUSTES et le garde-fou les rejetait, parce
-# que {MEDIUM} et {M} different. On ramene donc les deux cotes a la meme
-# notation avant de comparer. L'ordre compte : « EXTRA LARGE » doit etre
-# vu avant « LARGE », sinon il devient « EXTRA L ».
+# Both matches are RIGHT and the guard rejected them, because {MEDIUM}
+# and {M} differ. So we bring both sides to the same notation before
+# comparing. Order matters: "EXTRA LARGE" must be seen before "LARGE",
+# otherwise it becomes "EXTRA L".
 TAILLES = [
     ("EXTRA EXTRA LARGE", "XXL"), ("EXTRA LARGE", "XL"),
     ("EXTRA SMALL", "XS"), ("X LARGE", "XL"), ("X SMALL", "XS"),
@@ -331,7 +333,7 @@ TAILLES = [
 
 
 def harmoniser_tailles(texte) -> str:
-    """Ramene « MEDIUM » et « M », « EXTRA LARGE » et « XL », a la meme forme."""
+    """Brings "MEDIUM" and "M", "EXTRA LARGE" and "XL", to one form."""
     normalise = f" {_sans_accent(texte)} "
     for longue, courte in TAILLES:
         normalise = normalise.replace(f" {longue} ", f" {courte} ")
@@ -339,21 +341,21 @@ def harmoniser_tailles(texte) -> str:
 
 
 def marque_probable(designation, fournisseur) -> str | None:
-    """Le mot qui figure a la fois dans notre libelle et chez le fournisseur.
+    """The word found both in our label and in the supplier's name.
 
-    C'est la marque, et c'est ce qu'EUDAMED indexe. « HYGIENE PRODUCT
-    MARQUE-U » et « MARQUE-U DISCREET MAXI » partagent MARQUE-U : une
-    requete `reference` + `tradeName=MARQUE-U` rend UN dispositif, le bon,
-    la ou la reference seule en rendait des centaines.
+    That is the brand, and that is what EUDAMED indexes. "HYGIENE PRODUCT
+    MARQUE-U" and "MARQUE-U DISCREET MAXI" share MARQUE-U: a `reference`
+    + `tradeName=MARQUE-U` request returns ONE device, the right one,
+    where the reference alone returned hundreds of them.
 
-    Le tri par rarete ne pouvait pas le trouver : MARQUE-U figure dans 88
-    de nos libelles, donc il passait derriere GAMME-1 (9) ou CHANGE (2)
-    et n'etait jamais soumis. La marque est frequente CHEZ NOUS et
-    distinctive CHEZ EUX — les deux ne se contredisent pas.
+    Sorting by rarity could not find it: MARQUE-U appears in 88 of our
+    labels, so it came after GAMME-1 (9) or CHANGE (2) and was never
+    submitted. The brand is frequent AT OUR END and distinctive AT
+    THEIRS: the two do not contradict each other.
 
-    Sans intersection, on ne force rien : le premier mot d'un libelle
-    n'est pas toujours la marque (« GENOUILLERE ACTIVE MODELE-A »), et
-    en inventer une couterait une minute pour rien.
+    With no intersection we force nothing: the first word of a label is
+    not always the brand ("GENOUILLERE ACTIVE MODELE-A"), and inventing
+    one would cost a minute for nothing.
     """
     mots_fournisseur = {m for m in _sans_accent(fournisseur).split()
                         if len(m) >= 4 and m not in MOTS_TROP_COURANTS}
@@ -366,11 +368,11 @@ def marque_probable(designation, fournisseur) -> str | None:
 
 
 def apprendre_frequences(designations) -> None:
-    """Combien de nos libelles emploient chaque mot.
+    """How many of our labels use each word.
 
-    Se calcule sur TOUS les libelles du classeur, pas sur les seuls
-    articles a verifier : c'est notre vocabulaire d'ensemble qui dit
-    qu'« ATTELLE » est courant et « MODELE-A » distinctif.
+    Computed over ALL the labels in the workbook, not over the articles
+    to be checked alone: it is our overall vocabulary that says
+    "ATTELLE" is common and "MODELE-A" distinctive.
     """
     global _FREQUENCES
     compte: collections.Counter = collections.Counter()
@@ -381,14 +383,14 @@ def apprendre_frequences(designations) -> None:
 
 
 def mots_a_interroger(designation, fournisseur=None) -> list[str]:
-    """Les mots de notre libelle qui valent une requete, le plus rare d'abord.
+    """The words of our label worth a request, the rarest first.
 
-    On ote le nom du fournisseur en tete — nos libelles le repetent, le
-    registre non — puis tout ce qui est trop court, purement numerique ou
-    trop courant pour distinguer quoi que ce soit.
+    We strip the supplier name off the front (our labels repeat it, the
+    registry does not), then everything too short, purely numeric or too
+    common to distinguish anything at all.
 
-    Si `apprendre_frequences` n'a pas ete appele, tous les mots pesent
-    zero et l'ordre retombe sur la longueur : degrade, jamais faux.
+    If `apprendre_frequences` has not been called, every word weighs zero
+    and the order falls back on length: degraded, never wrong.
     """
     texte = _sans_accent(designation)
     prefixe = _sans_accent(fournisseur).strip()
@@ -405,8 +407,8 @@ def mots_a_interroger(designation, fournisseur=None) -> list[str]:
             retenus.append(mot)
     retenus.sort(key=lambda mot: (_FREQUENCES.get(mot, 0), -len(mot)))
 
-    # La marque passe DEVANT tout le reste : c'est la seule chose que
-    # notre libellé et celui du registre nomment pareil.
+    # The brand goes AHEAD of everything else: it is the only thing our
+    # label and the registry's name in the same way.
     marque = marque_probable(designation, fournisseur)
     if marque:
         retenus = [marque] + [m for m in retenus if m != marque]
@@ -414,11 +416,11 @@ def mots_a_interroger(designation, fournisseur=None) -> list[str]:
 
 
 def _code_unite(primary_di) -> str | None:
-    """Le DI ramene a un EAN-13 d'unite de vente, ou rien.
+    """The DI reduced to a sales unit EAN-13, or nothing.
 
-    Un GTIN-14 d'indicateur 1 a 8 designe un CARTON, jamais l'unite : le
-    retenir ferait entrer un code de regroupement dans un referentiel
-    d'articles. Seul l'indicateur 0 est un EAN-13 prefixe d'un zero.
+    A GTIN-14 with an indicator from 1 to 8 designates a CASE, never the
+    unit: keeping it would let a grouping code into an article
+    repository. Only indicator 0 is an EAN-13 prefixed with a zero.
     """
     brut = str(primary_di or "").strip()
     if len(brut) == 14:
@@ -433,7 +435,7 @@ def _code_unite(primary_di) -> str | None:
 
 
 def _interroger(reference: str, mot: str) -> tuple[list[dict], int, str]:
-    """(candidats, total annonce, statut) pour un couple reference/mot."""
+    """(candidates, announced total, status) for a reference/word pair."""
     try:
         reponse = requests.get(
             URL, headers=ENTETES, timeout=TIMEOUT,
@@ -450,15 +452,15 @@ def _interroger(reference: str, mot: str) -> tuple[list[dict], int, str]:
 
     donnees = reponse.json()
     total = donnees.get("totalElements", 0)
-    # Un total demesure signale un filtre ignore, pas un resultat
+    # An outsized total signals an ignored filter, not a result
     if total > 100_000:
         return [], 0, "echec"
     if not total:
         return [], 0, "absent"
 
-    # Uniquement ce qui se serialise : le cache est du JSON, et les
-    # ensembles de mots n'y entrent pas. Ils se reconstruisent a la
-    # lecture, dans `_verdict` — c'est du calcul, pas de la donnee.
+    # Only what serialises: the cache is JSON, and sets of words do not
+    # go into it. They are rebuilt on reading, in `_verdict`: that is
+    # computation, not data.
     candidats = []
     for element in donnees.get("content") or []:
         code = _code_unite(element.get("primaryDi"))
@@ -475,7 +477,7 @@ def _interroger(reference: str, mot: str) -> tuple[list[dict], int, str]:
 
 
 def _variante_commerciale(notre_libelle, libelle_eudamed) -> str:
-    """Un mot de variante present du seul cote du registre, s'il y en a un."""
+    """A variant word present on the registry's side only, if there is one."""
     les_notres = set(_sans_accent(notre_libelle).split())
     les_leurs = set(_sans_accent(libelle_eudamed).split())
     ecart = (les_leurs & VARIANTES_COMMERCIALES) - les_notres
@@ -486,10 +488,10 @@ def _variante_commerciale(notre_libelle, libelle_eudamed) -> str:
 
 
 def _verdict(article: dict, etat: dict) -> dict:
-    """Confronte un article au registre, mot par mot, et tranche.
+    """Confronts an article with the registry, word by word, and decides.
 
-    S'arrete au premier mot concluant : les suivants couteraient une
-    minute pour confirmer ce qu'on sait deja.
+    Stops at the first conclusive word: the following ones would cost a
+    minute to confirm what we already know.
     """
     fichier = REPONSE_RECUE.get(str(article["Fournisseur"] or "").strip())
     if fichier:
@@ -501,9 +503,10 @@ def _verdict(article: dict, etat: dict) -> dict:
     if not mots:
         return {"verdict": "NON TESTÉ", "motif": "aucun mot interrogeable"}
 
-    # Les mots reellement soumis. Un rejet ne vaut que par eux : « rejete
-    # apres MODELE-B, CUTANE, OVALE » se lit, « rejete » tout court ne se
-    # verifie pas. C'est la premiere chose qui manquait a l'essai du 14/09.
+    # The words actually submitted. A rejection is only worth what they
+    # are: "rejected after MODELE-B, CUTANE, OVALE" can be read,
+    # "rejected" on its own cannot be checked. That is the first thing
+    # the 14/09 trial was missing.
     essayes: list[str] = []
     vu_beaucoup = False
     for mot in mots:
@@ -526,14 +529,14 @@ def _verdict(article: dict, etat: dict) -> dict:
         if connu["statut"] == "absent":
             continue
 
-        # Les ensembles de mots sont reconstruits ici plutot que
-        # serialises — mais dans des COPIES. Les enrichir sur place
-        # revenait a poser des `set` dans les dictionnaires du cache, qui
-        # sont les memes objets : l'enregistrement suivant echouait, et
-        # l'echec survenait une ligne APRES celle qui l'avait cause.
-        # Les tailles sont harmonisees des DEUX cotes avant comparaison —
-        # sinon « MEDIUM » et « M » se disqualifient l'un l'autre. Le
-        # libelle d'origine reste intact pour l'affichage.
+        # The sets of words are rebuilt here rather than serialised, but
+        # in COPIES. Enriching them in place amounted to putting `set`
+        # objects into the cache dictionaries, which are the very same
+        # objects: the next save then failed, and the failure showed up
+        # one row AFTER the one that had caused it.
+        # Sizes are harmonised on BOTH sides before comparison, otherwise
+        # "MEDIUM" and "M" disqualify each other. The original label is
+        # left intact for display.
         candidats = []
         for candidat in (connu.get("candidats") or []):
             compare = harmoniser_tailles(candidat["libelle"])
@@ -580,11 +583,12 @@ def _verdict(article: dict, etat: dict) -> dict:
 
 
 def _dans_le_perimetre(df: pd.DataFrame) -> pd.Series:
-    """Les lignes appartenant au perimetre fige, qu'on LIT sans le recalculer.
+    """The rows belonging to the frozen scope, which we READ, never recompute.
 
-    La cle est la Reference interne. Le code article ne sert qu'en repli,
-    parce que quelques lignes du classeur EAN n'ont pas de reference — et
-    perdre un article sur un champ vide serait le pire des filtres.
+    The key is the internal Référence. The article code only serves as a
+    fallback, because a few rows of the EAN workbook have no reference,
+    and losing an article on an empty field would be the worst filter of
+    all.
     """
     references = perimetre_liste.references()
     codes = perimetre_liste.codes_article()
@@ -595,24 +599,24 @@ def _dans_le_perimetre(df: pd.DataFrame) -> pd.Series:
 
 
 def _a_verifier(perimetre_seul: bool = False) -> pd.DataFrame:
-    """Les lignes dont le code vient d'EUDAMED sur une reference courte."""
+    """The rows whose code comes from EUDAMED on a short reference."""
     fichier = _derniere_version()
     df = pd.read_excel(chemin_lisible(fichier), sheet_name="Codes EAN",
                        skiprows=3, dtype=str)
-    # Le vocabulaire s'apprend sur TOUT le classeur, avant tout filtre :
-    # c'est notre usage d'ensemble qui dit qu'un mot est courant.
+    # The vocabulary is learned over the WHOLE workbook, before any
+    # filter: it is our overall usage that says a word is common.
     apprendre_frequences(df["Désignation"])
     df = df[df["Exploitable"].fillna("").str.strip() == "oui"]
     douteux = df[eudamed_fiabilite.douteux(df)].copy()
-    print(f"{len(douteux)} codes à vérifier ({fichier.name})")
+    print(f"{len(douteux)} codes to check ({fichier.name})")
 
     if perimetre_seul:
         douteux = douteux[_dans_le_perimetre(douteux)].copy()
         print(f"  {perimetre_liste.entete()}")
-        print(f"  {len(douteux)} dans le périmètre figé")
+        print(f"  {len(douteux)} within the frozen scope")
 
-    print(f"  {douteux['Réf. fournisseur'].nunique()} références distinctes")
-    print(f"  vocabulaire appris : {len(_FREQUENCES)} mots")
+    print(f"  {douteux['Réf. fournisseur'].nunique()} distinct references")
+    print(f"  vocabulary learned: {len(_FREQUENCES)} words")
     return douteux
 
 
@@ -663,12 +667,12 @@ def etat_courant(perimetre_seul: bool = False) -> None:
     articles = _a_verifier(perimetre_seul)
     refs = set(articles["Réf. fournisseur"].astype(str).str.strip())
     interrogees = {cle.split("|", 1)[0] for cle in etat}
-    print(f"  {len(etat)} appels en cache")
-    print(f"  {len(refs & interrogees)} références déjà entamées sur "
+    print(f"  {len(etat)} calls in cache")
+    print(f"  {len(refs & interrogees)} references already started out of "
           f"{len(refs)}")
     restantes = len(refs - interrogees)
-    print(f"  reste au moins {restantes} références, soit environ "
-          f"{restantes * PAUSE / 3600:.0f} h au rythme d'un appel/minute")
+    print(f"  at least {restantes} references left, i.e. roughly "
+          f"{restantes * PAUSE / 3600:.0f} h at one call a minute")
 
 
 def main() -> None:
@@ -685,17 +689,17 @@ def main() -> None:
 
     if not limite:
         if _empecher_la_veille():
-            print("veille système désactivée le temps de la collecte "
-                  "(l'écran peut s'éteindre)")
+            print("system sleep disabled for the duration of the collection "
+                  "(the screen may go off)")
         else:
-            print("! la mise en veille n'a pas pu être empêchée : une nuit "
-                  "de collecte peut être perdue si le poste s'endort")
+            print("! sleep could not be prevented: a night of collection "
+                  "may be lost if the machine falls asleep")
 
     etat = _charger()
     articles = _a_verifier(perimetre_seul)
     if limite:
         articles = articles.head(limite)
-        print(f"  essai : {len(articles)} articles seulement")
+        print(f"  trial: {len(articles)} articles only")
 
     lignes = []
     for rang, article in enumerate(articles.to_dict("records"), start=1):

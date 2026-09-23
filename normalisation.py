@@ -1,24 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-Normalisation de la référence article, pour le rapprochement.
+Normalisation of the article reference, for matching.
 
-Une seule fonction, volontairement isolée : elle est appelée des deux côtés
-de chaque jointure du pipeline. Deux normalisations qui divergent d'un
-espace ou d'une casse produisent un rapprochement vide, sans lever
-d'erreur — c'est exactement le genre de panne silencieuse que ce module
-existe pour empêcher.
+A single function, deliberately isolated: it is called on both sides of
+every join in the pipeline. Two normalisations that diverge by one space
+or one letter case produce an empty match without raising any error,
+which is exactly the kind of silent failure this module exists to
+prevent.
 """
 
 import re
 
 
 def normaliser_reference(valeur) -> str | None:
-    """Référence interne sous sa forme de rapprochement.
+    """Internal reference in its matching form.
 
-    Le slash de tête est un artefact d'export : « /51280 » et « 51280 »
-    désignent le même article. Tout autre slash est conservé — il peut
-    porter du sens, et rien ne dit qu'il ne s'agit pas d'une référence
-    fabricant glissée dans la colonne.
+    The leading slash is an export artefact: "/51280" and "51280"
+    designate the same article. Any other slash is kept: it may carry
+    meaning, and nothing says it is not a manufacturer reference that
+    slipped into the column.
     """
     if valeur is None or (isinstance(valeur, float) and valeur != valeur):
         return None

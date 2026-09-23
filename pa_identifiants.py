@@ -1,40 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-Chantier PA — réparer les identifiants abîmés avant tout rapprochement flou.
+PA workstream: repair damaged identifiers before any fuzzy matching.
 
-    python pa_identifiants.py               diagnostic sur le périmètre
-    python pa_identifiants.py FOURNISSEUR_E un fournisseur
+    python pa_identifiants.py               diagnostic over the whole scope
+    python pa_identifiants.py FOURNISSEUR_E one supplier
 
-POURQUOI AVANT LE LIBELLÉ
-    Une correspondance démontrée par la clé de contrôle d'un EAN est une
-    correspondance EXACTE, pas un candidat : la somme pondérée 3/1 de GS1 ne
-    tombe juste par hasard qu'une fois sur dix. Elle s'applique donc, là où un
-    rapprochement par libellé ne peut que se proposer.
+WHY THIS COMES BEFORE THE LABEL
+    A match proved by an EAN check digit is an EXACT match, not a candidate:
+    the GS1 3/1 weighted sum only falls into place by chance one time in ten.
+    So it can be applied, where a label match can only ever propose.
 
-CE QU'ON FAIT
-    1. Plusieurs identifiants dans une seule cellule.
-       « 1234567890128+1234567890135 » : deux EAN valides séparés par un « + ».
-       On les découpe et on essaie chacun. Aucun chiffre n'est ajouté.
+WHAT WE DO
+    1. Several identifiers inside a single cell.
+       "1234567890128+1234567890135": two valid EANs separated by a "+".
+       We split them and try each one. No digit is ever added.
 
-    2. GTIN-14 dont l'indicateur de tête vaut zéro.
-       Les treize chiffres de l'EAN y sont déjà tous ; on retire le bourrage.
+    2. GTIN-14 whose leading indicator is zero.
+       All thirteen digits of the EAN are already there; we drop the padding.
 
-ON NE RECONSTRUIT AUCUN IDENTIFIANT (décision du 16/09)
-    Trois réparations vivaient ici — EAN tronqué dont on recalculait la clé,
-    zéro de tête restitué, clé fausse corrigée. Toutes retirées. Une clé de
-    contrôle qui tombe juste démontre moins qu'il n'y paraît : elle tombe
-    juste une fois sur dix au hasard, et sur des milliers de références cela
-    arrive assez pour poser des prix faux et muets. Un identifiant abîmé se
-    SIGNALE ; il repart vers le rapprochement par libellé, qui propose au
-    lieu d'appliquer.
+WE REBUILD NO IDENTIFIER (decision of 16/09)
+    Three repairs used to live here: a truncated EAN whose check digit we
+    recomputed, a restored leading zero, a wrong check digit corrected. All
+    removed. A check digit that falls into place proves less than it looks
+    like: it does so by chance one time in ten, and over thousands of
+    references that happens often enough to set prices that are both wrong
+    and silent. A damaged identifier is REPORTED; it goes back to label
+    matching, which proposes instead of applying.
 
-CE QU'ON NE RÉPARE PAS NON PLUS
-    Le socle de référence — le radical numérique d'au moins six chiffres, qui
-    rapproche, chez le Fournisseur J, « 1234567 » de « 1234567HR ». Chez le
-    responsable des prix il est SIGNALÉ,
-    jamais appliqué, et on garde sa règle : un suffixe de gamme distingue
-    souvent deux produits réels. Il ne devient exploitable que corroboré par le
-    prix, et il ressort alors en « À RELIRE », jamais en injectable.
+WHAT WE DO NOT REPAIR EITHER
+    The reference stem: the numeric radical of at least six digits, the one
+    that brings "1234567HR" and "1234567" together at Supplier J. The price
+    owner REPORTS it, never applies it, and we keep his rule: a range suffix
+    often tells two real products apart. It only becomes usable once the
+    price corroborates it, and it then comes out as "À RELIRE", never as
+    something injectable.
 """
 
 from __future__ import annotations
@@ -53,14 +52,14 @@ from extracteurs.base import (  # noqa: E402
     ean_est_valide,
 )
 
-# Un « + » sépare deux identifiants ; deux espaces ou plus aussi, quand la
-# saisie a collé deux colonnes. On reste volontairement étroit : une virgule ou
-# un slash appartiennent souvent à la référence elle-même (« 123.456 »).
+# A "+" separates two identifiers; so do two or more spaces, when data entry
+# has run two columns together. We stay deliberately narrow: a comma or a
+# slash often belongs to the reference itself ("123.456").
 SEPARATEURS = re.compile(r"\s*\+\s*|\s{2,}")
 
 
 def morceaux(reference) -> list[str]:
-    """Les identifiants distincts que porte une cellule."""
+    """The distinct identifiers a single cell carries."""
     if reference is None or (isinstance(reference, float) and pd.isna(reference)):
         return []
     texte = str(reference).strip()
@@ -71,20 +70,20 @@ def morceaux(reference) -> list[str]:
 
 
 def variantes_ean(valeur: str) -> list[tuple[str, str]]:
-    """Les EAN plausibles que cette valeur pourrait désigner, avec leur preuve.
+    """The plausible EANs this value could designate, with their proof.
 
-    Ne renvoie QUE des codes dont la clé de contrôle est correcte. Un candidat
-    dont la clé ne tombe pas juste n'est pas un EAN : le proposer reviendrait à
-    fabriquer un prix faux et silencieux.
+    Returns ONLY codes whose check digit is correct. A candidate whose check
+    digit does not fall into place is not an EAN: proposing it would amount
+    to manufacturing a wrong and silent price.
     """
     texte = str(valeur or "").strip()
     if not texte:
         return []
 
-    # Un code-barres ne contient QUE des chiffres. « 1234-56-7.0 » est une
-    # référence fournisseur : en retirer les tirets pour obtenir huit chiffres,
-    # puis leur recalculer une clé, ne démontre rien — cela fabrique un EAN qui
-    # n'a jamais existé. On refuse donc tout ce qui n'est pas déjà numérique.
+    # A barcode contains ONLY digits. "1234-56-7.0" is a supplier reference:
+    # stripping its hyphens to get eight digits, then computing a check digit
+    # for them, proves nothing - it manufactures an EAN that never existed.
+    # So we refuse anything that is not already numeric.
     if not texte.isdigit():
         return []
     chiffres = texte
@@ -95,36 +94,36 @@ def variantes_ean(valeur: str) -> list[tuple[str, str]]:
         if ean_est_valide(code) and all(code != c for c, _ in trouves):
             trouves.append((code, preuve))
 
-    # Tel quel
+    # As read
     ajouter(chiffres, "EAN lu tel quel")
 
-    # GTIN-14 d'unite de vente : l'indicateur de tete vaut zero, les treize
-    # chiffres de l'EAN sont deja tous la. On enleve un chiffre de bourrage,
-    # on n'en invente aucun — c'est pourquoi ce cas survit a la regle.
+    # GTIN-14 of a sales unit: the leading indicator is zero, all thirteen
+    # digits of the EAN are already there. We remove one padding digit, we
+    # invent none - that is why this case survives the rule.
     if len(chiffres) == 14 and chiffres[0] == "0":
         ajouter(chiffres[1:], "GTIN-14 d'unité ramené en EAN-13")
 
-    # RETIRE LE 16/09, sur decision : ON NE RECONSTRUIT PAS D'IDENTIFIANT.
+    # REMOVED ON 16/09, by decision: WE DO NOT REBUILD IDENTIFIERS.
     #
-    # Trois reparations vivaient ici, toutes demontrees par la cle de
-    # controle, toutes supprimees :
-    #   - EAN tronque a 12 chiffres, cle recalculee ;
-    #   - zero de tete perdu par Excel, restitue par zfill ;
-    #   - cle fausse d'un chiffre, corrigee.
+    # Three repairs used to live here, all of them proved by the check
+    # digit, all of them deleted:
+    #   - EAN truncated to 12 digits, check digit recomputed;
+    #   - leading zero lost by Excel, restored with zfill;
+    #   - check digit wrong by one digit, corrected.
     #
-    # L'argument etait qu'une cle de controle ne tombe juste qu'une fois sur
-    # dix par hasard. Il est vrai et il ne suffit pas : sur des milliers de
-    # references, une fois sur dix arrive souvent, et le prix pose alors est
-    # faux ET muet. Un identifiant abime se signale, il ne se repare pas.
+    # The argument was that a check digit only falls into place by chance one
+    # time in ten. That is true and it is not enough: over thousands of
+    # references, one time in ten happens often, and the price then set is
+    # wrong AND silent. A damaged identifier gets reported, not repaired.
     #
-    # Ce que devient un tel code : il reste sans prix, et le rapprochement
-    # suivant — libelle, fabricant — s'en charge en PROPOSANT.
+    # What becomes of such a code: it stays without a price, and the next
+    # match - label, manufacturer - takes it over by PROPOSING.
 
     return trouves
 
 
 def candidats_identifiant(reference) -> list[tuple[str, str]]:
-    """Tous les EAN démontrables derrière une référence, cellule découpée."""
+    """Every provable EAN behind a reference, with the cell split apart."""
     resultats: list[tuple[str, str]] = []
     parts = morceaux(reference)
     for i, part in enumerate(parts):
@@ -136,19 +135,19 @@ def candidats_identifiant(reference) -> list[tuple[str, str]]:
 
 
 # --------------------------------------------------------------------------
-# Socle de référence — signalé, jamais appliqué
+# Reference stem: reported, never applied
 
 
 MOTIF_SOCLE = re.compile(r"(\d{6,})")
 
 
 def socle_reference(reference) -> str | None:
-    """Le radical numérique d'au moins six chiffres, comme chez le
-    responsable des prix.
+    """The numeric radical of at least six digits, as the price owner
+    uses it.
 
-    « 1234567HR » et « 1234567 » partagent le socle « 1234567 ». C'est un
-    indice, pas une preuve : chez le Fournisseur J, « UG » et « 6C »
-    distinguent des sous-gammes qui ne sont pas le même produit.
+    "1234567HR" and "1234567" share the stem "1234567". That is a clue, not
+    a proof: at Supplier J, "UG" and "6C" tell apart sub-ranges that are not
+    the same product.
     """
     if reference is None or (isinstance(reference, float) and pd.isna(reference)):
         return None
@@ -157,18 +156,18 @@ def socle_reference(reference) -> str | None:
 
 
 # --------------------------------------------------------------------------
-# Application au rapprochement
+# Applied to the matching cascade
 
 
 def rapprocher_par_identifiant(fusion: pd.DataFrame,
                                tarif: pd.DataFrame,
                                champs: list[str]) -> pd.DataFrame:
-    """Cinquième passe : les EAN LUS, sur ce qui reste sans prix.
+    """Fifth pass: EANs AS READ, over whatever is still without a price.
 
-    Appelée depuis pa_completer.py après les quatre clés existantes. Depuis
-    le 16/09 elle ne rapproche que sur des codes entièrement présents dans
-    la cellule — cellule à plusieurs identifiants, GTIN-14 dépadé. Plus
-    aucune reconstruction, donc plus aucun prix posé sur un chiffre inventé.
+    Called from pa_completer.py after the four existing keys. Since 16/09 it
+    only matches on codes entirely present in the cell: multi-identifier
+    cell, unpadded GTIN-14. No reconstruction any more, therefore no price
+    set on an invented digit.
     """
     if "prix_achat_unitaire_ht" not in fusion.columns:
         return fusion
@@ -176,7 +175,7 @@ def rapprocher_par_identifiant(fusion: pd.DataFrame,
     if not absents.any():
         return fusion
 
-    # Index des EAN du tarif, tous ceux qui sont valides.
+    # Index of the price list's EANs, every valid one of them.
     index: dict[str, int] = {}
     for colonne in ("ean", "ref_fournisseur"):
         if colonne not in tarif.columns:
@@ -213,7 +212,7 @@ def rapprocher_par_identifiant(fusion: pd.DataFrame,
             if gagne:
                 break
     if trouves:
-        print(f"  {trouves} rapprochés par EAN lu")
+        print(f"  {trouves} matched by EAN as read")
     return fusion
 
 
@@ -222,19 +221,19 @@ def rapprocher_par_identifiant(fusion: pd.DataFrame,
 
 
 def diagnostic(motif: str | None = None) -> None:
-    """Ce que la réparation d'identifiants trouverait, sans rien appliquer."""
+    """What identifier repair would find, applying nothing."""
     from extracteurs.base import chemin_lisible
 
     chemin = RACINE / "sortie" / "3-achats" / "pa_etat_par_article.xlsx"
     if not chemin.exists():
-        print("pa_etat_par_article.xlsx absent : lancer run_pa.py d'abord")
+        print("pa_etat_par_article.xlsx missing: run run_pa.py first")
         return
     d = pd.read_excel(chemin_lisible(chemin), sheet_name=0, header=3, dtype=str)
     if motif:
         d = d[d["Fournisseur"].fillna("").str.upper().str.contains(motif.upper())]
 
     cible = d[d["Motif"].fillna("").str.contains("pas dans son tarif", case=False)]
-    print(f"{len(cible)} articles au tarif de leur fournisseur mais non rapprochés")
+    print(f"{len(cible)} articles in their supplier's price list but unmatched")
     print()
 
     compteurs: dict[str, int] = {}
@@ -254,20 +253,20 @@ def diagnostic(motif: str | None = None) -> None:
                 compteurs[cle] = compteurs.get(cle, 0) + 1
                 exemples.setdefault(cle, []).append(f"{brut} -> {code}")
 
-    print("=== reconstructions possibles ===")
+    print("=== possible reconstructions ===")
     if compteurs:
         for cle, n in sorted(compteurs.items(), key=lambda x: -x[1]):
             print(f"  {n:>4}  {cle}")
             for e in exemples[cle][:4]:
                 print(f"          {e}")
     else:
-        print("  aucune")
-    print(f"\n  cellules à identifiants multiples : {multi}")
+        print("  none")
+    print(f"\n  cells carrying multiple identifiers: {multi}")
 
-    # Le socle : on compte, on n'applique pas.
+    # The stem: we count it, we do not apply it.
     socles = cible["Réf. article fournisseur"].map(socle_reference).dropna()
-    print(f"\n=== socles de référence exploitables : {len(socles)} ===")
-    print("  (signalés, jamais appliqués — corroboration par le prix requise)")
+    print(f"\n=== usable reference stems: {len(socles)} ===")
+    print("  (reported, never applied - corroboration by the price required)")
 
 
 def main() -> None:

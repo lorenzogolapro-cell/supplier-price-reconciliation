@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Etat du prix d'achat 2026, article par article, sur tout le perimetre.
+State of the 2026 purchase price, item by item, across the whole scope.
 
     python pa_etat_par_article.py
 
-Les autres classeurs du chantier montrent chacun un morceau : un
-fournisseur, une sous-population, les propositions. Aucun ne repond a la
-question qu'on pose vraiment devant un article : celui-la, ou en est-il,
-et si rien n'a ete fait, pourquoi ?
+The other workbooks in this workstream each show one piece: a supplier,
+a sub-population, the proposals. None of them answers the question
+people actually ask in front of an item: where does this one stand, and
+if nothing has been done, why?
 
-Une ligne par article du perimetre fige, les 4 731, y compris ceux dont
-il n'y a rien a dire — c'est justement leur nombre qui compte. Aucun
-filtre n'est applique : tout ce qui pourrait en etre un devient une
-colonne, pour qu'on puisse trier sans avoir a relancer un traitement.
+One row per item of the frozen scope, all 4,731 of them, including those
+there is nothing to say about: their number is precisely what counts. No
+filter is applied: anything that could be one becomes a column instead,
+so that sorting does not require rerunning a job.
 
-Sortie : sortie/3-achats/pa_etat_par_article.xlsx
+Output: sortie/3-achats/pa_etat_par_article.xlsx
 """
 
 from __future__ import annotations
@@ -38,47 +38,47 @@ import wms_extract  # noqa: E402
 EXTRACT = wms_extract.chemin()
 
 REPRISES = ["Ancien PA", "Nouveau PA", "Écart %", "Origine Nouveau PA",
-            # La reference telle qu'elle figure DANS LE TARIF : c'est
-            # celle avec laquelle on commande, et elle ne coincide pas
-            # toujours avec celle de la fiche article.
+            # The reference as it appears IN THE PRICE LIST: that is the
+            # one used to order, and it does not always coincide with the
+            # one on the item record.
             "Réf. fournisseur",
             "Fichier source PA", "Alerte", "Clé de rapprochement"]
 
 
 def code_article(colonne: pd.Series) -> pd.Series:
-    """Le code article en texte, sans le « .0 » que pandas y colle.
+    """The item code as text, without the ".0" pandas sticks onto it.
 
-    Une colonne d'entiers qui contient un vide devient flottante, et
-    « 32818 » se lit alors « 32818.0 ». La jointure tombe a zero sans
-    lever la moindre erreur — c'est le genre de panne qui se voit
-    seulement au resultat final, quand il est trop tard.
+    An integer column containing one blank turns into a float column, and
+    "32818" then reads "32818.0". The join drops to zero without raising
+    the slightest error: the kind of failure that only shows in the final
+    result, when it is too late.
     """
     texte = colonne.astype(str).str.strip()
     return texte.str.replace(r"\.0$", "", regex=True)
 
 
 def classeur_fusionne() -> Path:
-    """Le dernier classeur prix validés + propositions produit."""
+    """The latest validated-prices + proposals workbook produced."""
     trouves = sorted(DONNEES.glob("prix_valides + propositions *.xlsx"),
                      key=lambda f: f.stat().st_mtime)
     if not trouves:
-        raise SystemExit("Lancer d'abord pa_fusionner.py")
+        raise SystemExit("Run pa_fusionner.py first")
     return trouves[-1]
 
 
 def prix_connus() -> pd.DataFrame:
-    """Ce que le classeur consolide sait, par code article.
+    """What the consolidated workbook knows, per item code.
 
-    On lit le classeur produit plutot que de refaire la consolidation :
-    le chiffre publie et celui de cet etat doivent etre le meme, sinon
-    l'un des deux ment.
+    We read the workbook produced rather than redoing the consolidation:
+    the published figure and the one in this state view must be the same,
+    otherwise one of the two is lying.
     """
     chemin = classeur_fusionne()
-    print(f"  source des prix : {chemin.name}")
+    print(f"  price source: {chemin.name}")
     feuille = load_workbook(chemin_lisible(chemin), read_only=True)["Feuil1"]
     lignes = list(feuille.iter_rows(values_only=True))
-    # Le cartouche de couverture occupe les premieres lignes : l'entete
-    # est la premiere ligne qui porte « Code article ».
+    # The cover block takes up the first rows: the header is the first
+    # row carrying "Code article".
     depart = next(i for i, l in enumerate(lignes)
                   if l and "Code article" in [str(c) for c in l])
     entetes = [str(c) for c in lignes[depart]]
@@ -92,13 +92,13 @@ def prix_connus() -> pd.DataFrame:
 
 
 def motifs() -> pd.DataFrame:
-    """Pourquoi un article n'a pas de prix, d'apres les balayages.
+    """Why an item has no price, according to the sweeps.
 
-    Les trois causes ne se valent pas et ne se traitent pas pareil :
-    un prix ecarte existe et attend un arbitrage, un article absent du
-    tarif demande une verification de reference, un fournisseur sans
-    tarif demande un courrier. Les confondre ferait perdre le seul
-    classement utile.
+    The three causes are not equivalent and are not handled the same way:
+    an excluded price exists and is waiting for a decision, an item
+    missing from the price list calls for a reference check, a supplier
+    with no price list calls for a letter. Confusing them would lose the
+    only useful ranking.
     """
     lots = []
     for fichier in sorted(SORTIE_ACHATS.glob("pa_completer_*.xlsx")):
@@ -122,8 +122,8 @@ def motifs() -> pd.DataFrame:
             }))
     if not lots:
         return pd.DataFrame(columns=["Code article", "Motif"])
-    # Un ecart arbitrable prime sur une absence : c'est la piste la plus
-    # avancee des deux.
+    # A decidable gap wins over an absence: it is the more advanced of
+    # the two leads.
     tout = pd.concat(lots, ignore_index=True)
     tout["_rang"] = tout["Motif"].str.startswith("prix trouvé").map(
         {True: 0, False: 1})
@@ -149,11 +149,11 @@ def main() -> None:
     etat = etat.merge(prix_connus(), on="Code article", how="left")
     etat = etat.merge(motifs(), on="Code article", how="left")
 
-    # L'Ancien PA venait du seul classeur consolide — or un article sans
-    # prix 2026 n'y figure pas, et ressortait donc sans prix ACTUEL non
-    # plus. C'est precisement l'inverse de ce qu'on veut voir : sur un
-    # article qui reste a faire, savoir ce qu'on paie aujourd'hui est la
-    # premiere information utile. On le complete depuis le WMS.
+    # The Ancien PA came from the consolidated workbook alone, but an item
+    # with no 2026 price does not appear in it, and so came out with no
+    # CURRENT price either. That is exactly the opposite of what we want
+    # to see: on an item still to be done, knowing what we pay today is
+    # the first useful piece of information. We fill it from the WMS.
     try:
         import pa_completer
         actuels = (pa_completer.pa_actuels()
@@ -164,25 +164,24 @@ def main() -> None:
         vide = etat["Ancien PA"].isna()
         etat.loc[vide, "Ancien PA"] = etat.loc[vide, "Code article"].map(
             actuels)
-        print(f"  Ancien PA complété depuis le WMS sur "
-              f"{int(vide.sum() - etat['Ancien PA'].isna().sum())} articles")
+        print(f"  Ancien PA filled from the WMS on "
+              f"{int(vide.sum() - etat['Ancien PA'].isna().sum())} items")
     except Exception as err:                       # pragma: no cover
-        print(f"  ! PA du WMS indisponible : {type(err).__name__}")
+        print(f"  ! WMS purchase price unavailable: {type(err).__name__}")
 
-    # LES ARBITRAGES HUMAINS, POSES ICI ET PAS PLUS LOIN (18/09)
+    # HUMAN DECISIONS, APPLIED HERE AND NOWHERE FURTHER DOWN (18/09)
     #
-    # Ils l'etaient jusqu'ici dans la vue finale seulement. Consequence :
-    # AUCUNE autre vue ne les voyait — ni la reconciliation, qui
-    # re-signalait a chaque passe des divergences deja tranchees, ni le
-    # controle par les commandes, ni les feuilles de decision. Une alarme
-    # qui sonne encore apres qu'on a traite le probleme finit par etre
-    # ignoree, et c'est ce qu'on veut le moins sur un outil relance a
-    # chaque passe.
+    # Until now they were applied in the final view only. Consequence: NO
+    # other view saw them, neither the reconciliation, which re-reported
+    # already-settled divergences on every run, nor the check against
+    # orders, nor the decision sheets. An alarm that still rings after the
+    # problem has been dealt with ends up being ignored, and that is the
+    # last thing we want on a tool that is rerun at every pass.
     #
-    # `pa_etat_par_article` etant le socle dont TOUTES les vues derivent,
-    # c'est ici que les corrections doivent entrer. Elles le font AVANT le
-    # calcul du statut, pour qu'un article corrige cesse d'etre « sans
-    # prix », et JAMAIS sur une ligne du responsable des prix.
+    # Since `pa_etat_par_article` is the base from which ALL the views
+    # derive, this is where the corrections must enter. They do so BEFORE
+    # the status is computed, so that a corrected item stops being "sans
+    # prix", and NEVER on one of the price owner's rows.
     try:
         import pa_corrections_17_09 as corrections
 
@@ -203,9 +202,9 @@ def main() -> None:
             etat.loc[cible, "Clé de rapprochement"] = "arbitrage manuel"
             poses += int(cible.sum())
 
-        # Les prix écrits directement dans la dernière colonne du livrable,
-        # relevés au registre durable. Même règle : jamais sur une ligne
-        # déjà validée par le responsable des prix.
+        # Prices written straight into the last column of the deliverable,
+        # recorded in the durable register. Same rule: never on a row
+        # already validated by the price owner.
         import pa_annotations_livrable
 
         for code, prix in pa_annotations_livrable.prix_annotes().items():
@@ -220,9 +219,9 @@ def main() -> None:
             etat.loc[cible, "Clé de rapprochement"] = "annotation livrable"
             poses += int(cible.sum())
 
-        # « GARDE » : le candidat propose etait faux, l'ancien PA reprend
-        # sa place. Sans ancien PA il n'y a rien a reprendre — on ne pose
-        # pas un prix qu'on n'a pas.
+        # "GARDE": the proposed candidate was wrong, the former purchase
+        # price takes its place back. With no former price there is
+        # nothing to take back: we do not post a price we do not have.
         for entree in corrections.GARDE:
             cible = ((codes == str(entree["code_article"])) & ~est_valide
                      & ancien.notna())
@@ -235,21 +234,21 @@ def main() -> None:
             gardes += int(cible.sum())
 
         if poses or gardes:
-            # L'ecart se recalcule sur les lignes touchees, sinon il garde
-            # la trace du prix d'avant et raconte n'importe quoi.
+            # The gap is recomputed on the rows touched, otherwise it
+            # keeps the trace of the previous price and talks nonsense.
             n = pd.to_numeric(etat["Nouveau PA"], errors="coerce")
             a = pd.to_numeric(etat["Ancien PA"], errors="coerce")
             calculable = n.notna() & a.notna() & (a != 0)
             etat.loc[calculable, "Écart %"] = ((n - a) / a).round(4)
-            print(f"  arbitrages manuels : {poses} prix posés, "
-                  f"{gardes} anciens PA confirmés")
+            print(f"  manual decisions: {poses} prices posted, "
+                  f"{gardes} former purchase prices confirmed")
     except Exception as err:                           # pragma: no cover
-        print(f"  ! arbitrages manuels indisponibles : {type(err).__name__}: "
+        print(f"  ! manual decisions unavailable: {type(err).__name__}: "
               f"{err}")
 
-    # Le statut est la seule colonne qui se lit d'un coup d'oeil : trois
-    # valeurs, pas davantage, et ce que le responsable des prix a validé y
-    # est distingue du reste parce que lui seul a ete relu.
+    # The status is the only column that reads at a glance: three values,
+    # no more, and what the price owner has validated is kept apart from
+    # the rest because it alone has been reviewed.
     origine = etat["Origine ligne"].fillna("")
     a_un_prix = pd.to_numeric(etat["Nouveau PA"], errors="coerce").notna()
     etat["Statut PA"] = "3 — SANS PRIX"
@@ -257,9 +256,9 @@ def main() -> None:
     etat.loc[origine.str.startswith("Responsable"), "Statut PA"] = \
         "1 — ACQUIS (validé par le responsable)"
 
-    # Un article sans prix ET sans motif connu n'a jamais ete balaye :
-    # son fournisseur n'a envoye aucun tarif. Le dire est plus utile que
-    # de laisser la case vide.
+    # An item with no price AND no known reason has never been swept: its
+    # supplier sent no price list at all. Saying so is more useful than
+    # leaving the cell empty.
     sans_motif = (etat["Statut PA"] == "3 — SANS PRIX") & etat["Motif"].isna()
     sans_fournisseur = (etat["Fournisseur"].fillna("").str.strip() == "")
     etat.loc[sans_motif & ~sans_fournisseur, "Motif"] = \
@@ -268,11 +267,12 @@ def main() -> None:
         "aucun fournisseur au périmètre — voir le fabricant")
     etat.loc[etat["Statut PA"] != "3 — SANS PRIX", "Motif"] = ""
 
-    # Les fournisseurs qu'on a quittes sortent du chantier : leurs articles ne
-    # sont pas « sans prix » en attente d'un tarif, ils sont HORS CHANTIER.
-    # La nuance n'est pas cosmetique — un article sans prix appelle un
-    # travail, et celui-ci non. Sans elle, ils remontent a chaque passe dans
-    # les listes a traiter, et quelqu'un finit par chercher leur tarif.
+    # Suppliers we have left leave the workstream: their items are not
+    # "sans prix" waiting for a price list, they are OUT OF SCOPE OF THE
+    # WORK. The distinction is not cosmetic: an item with no price calls
+    # for work, this one does not. Without it, they come back into the
+    # to-do lists at every run, and somebody eventually goes looking for
+    # their price list.
     from fournisseurs_arretes import est_arrete, motif as motif_arret
 
     arretes = etat["Fournisseur"].fillna("").map(est_arrete)
@@ -281,31 +281,33 @@ def main() -> None:
         motif_arret)
     etat.loc[arretes, "Statut PA"] = "4 — HORS CHANTIER (fournisseur arrêté)"
     if arretes.any():
-        print(f"    {int(arretes.sum())} articles hors chantier "
-              f"(fournisseur arrêté) — dont "
-              f"{int(a_marquer.sum())} qui étaient sans prix")
+        print(f"    {int(arretes.sum())} items out of the workstream "
+              f"(supplier dropped), of which "
+              f"{int(a_marquer.sum())} had no price")
 
-    # CE QU'ON ÉCARTE N'EST PAS CE QUI RÉSISTE (18/09)
+    # WHAT WE SET ASIDE IS NOT WHAT RESISTS (18/09)
     #
-    # « 3 — SANS PRIX » mélangeait deux choses qui n'ont rien à voir : les
-    # articles qu'on n'arrive pas à chiffrer, et ceux qu'on a DÉCIDÉ de ne
-    # pas traiter — lits, fauteuils roulants, VPH, produits arrêtés. Sur
-    # 1 078 « sans prix », 522 étaient dans le second cas. Lire ce chiffre
-    # comme un reste-à-faire, c'est se tromper d'un facteur deux, et c'est
-    # arrivé le 18/09 dans une note destinée à l'extérieur.
+    # "3 — SANS PRIX" mixed two things that have nothing to do with each
+    # other: the items we cannot manage to price, and those we have
+    # DECIDED not to handle (beds, wheelchairs, VPH, discontinued
+    # products). Out of 1,078 "sans prix", 522 were in the second case.
+    # Reading that figure as work remaining is being wrong by a factor of
+    # two, and that is what happened on 18/09 in a note meant for an
+    # outside reader.
     #
-    # La règle n°3 du chantier dit quoi faire : « tout filtre devient une
-    # colonne ». La mise à l'écart devient donc une COLONNE DU SOCLE, et
-    # non plus une information qu'il faut aller chercher dans un second
-    # fichier en recroisant deux sources.
+    # Rule no. 3 of the workstream says what to do: "every filter becomes
+    # a column". So setting aside becomes a COLUMN OF THE BASE VIEW,
+    # rather than information you have to go and find in a second file by
+    # cross-referencing two sources.
     #
-    # Le classement vient de `pa_ecartes.classer()` — la MÊME fonction que
-    # celle qui produit les feuilles d'écartement, jamais une copie : deux
-    # écritures de la même règle finiraient par se contredire.
+    # The classification comes from `pa_ecartes.classer()`, the SAME
+    # function that produces the exclusion sheets, never a copy: two
+    # written forms of the same rule would end up contradicting each
+    # other.
     #
-    # `Statut PA` n'est pas touché. Les vues existantes qui comptent sur
-    # « 3 — SANS PRIX » continuent de fonctionner ; celles qui veulent le
-    # reste-à-faire réel filtrent sur « Mise à l'écart » vide.
+    # `Statut PA` is not touched. The existing views that rely on
+    # "3 — SANS PRIX" keep working; those that want the real work
+    # remaining filter on an empty "Mise à l'écart".
     try:
         import pa_ecartes
 
@@ -314,14 +316,15 @@ def main() -> None:
         etat["Mise à l'écart"] = pa_ecartes.classer(avec)["motif"].values
         ecartes = etat["Mise à l'écart"].fillna("") != ""
         sans_prix = etat["Statut PA"] == "3 — SANS PRIX"
-        print(f"    {int(ecartes.sum())} articles mis à l'écart "
-              f"(lit/fauteuil/VPH, fournisseur arrêté, arrêt fabricant)")
-        print(f"    reste-à-faire RÉEL : "
-              f"{int((sans_prix & ~ecartes).sum())} sans prix au périmètre "
-              f"actif, sur {int(sans_prix.sum())} « sans prix » au total")
+        print(f"    {int(ecartes.sum())} items set aside "
+              f"(bed/wheelchair/VPH, supplier dropped, discontinued)")
+        print(f"    REAL work remaining: "
+              f"{int((sans_prix & ~ecartes).sum())} without a price in the "
+              f"active scope, out of {int(sans_prix.sum())} 'sans prix' "
+              f"in total")
     except Exception as err:                           # pragma: no cover
         etat["Mise à l'écart"] = ""
-        print(f"  ! mise à l'écart indisponible : {type(err).__name__}: {err}")
+        print(f"  ! set-aside unavailable: {type(err).__name__}: {err}")
 
     colonnes = [
         "PERIMETRE_VERSION", "Réf. interne", "Code article",
@@ -345,10 +348,10 @@ def main() -> None:
     compte = sortie["Statut PA"].value_counts()
     acquis = int(compte.get("1 — ACQUIS (validé par le responsable)", 0))
     propose = int(compte.get("2 — PROPOSÉ (à relire)", 0))
-    print(f"\n{total} articles")
+    print(f"\n{total} items")
     for statut, n in compte.sort_index().items():
         print(f"  {statut:<30} {n:>5}  ({n / total:.1%})")
-    print("\nmotifs des articles sans prix :")
+    print("\nreasons for the items without a price:")
     for motif, n in (sortie.loc[sortie["Statut PA"] == "3 — SANS PRIX",
                                 "Motif"].value_counts().items()):
         print(f"  {n:>5}  {motif}")

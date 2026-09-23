@@ -1,33 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-LE fichier des codes EAN : toutes les sources reunies, une ligne par article.
+THE EAN code file: every source merged, one row per article.
 
     python ean_global.py
 
-Sortie : sortie/2-chantier-ean/EAN distributeur.xlsx
+Output: sortie/2-chantier-ean/EAN distributeur.xlsx
 
-Jusqu'ici les codes etaient eparpilles entre la consolidation, les releves
-VIDAL et le scanner d'entrepot, chacun dans son fichier. Celui-ci les
-rassemble et tranche : pour chaque article, le meilleur code disponible et
-d'ou il vient.
+Until now the codes were scattered between the consolidation, the VIDAL
+readings and the warehouse scanner, each in its own file. This one
+gathers them and decides: for each article, the best code available and
+where it comes from.
 
-Ordre de preference des sources, du plus sur au moins sur :
+Order of preference of the sources, from the safest to the least safe:
 
-    1. entrepot        releve sur l'emballage, au scanner : c'est le produit
-                       lui-meme qui l'a donne
-    2. tarif           le fournisseur le publie dans son fichier
-    3. référence=EAN   la reference saisie dans le WMS EST un code-barres
-    4. eudamed         declaration UDI du fabricant, par reference
-    5. vidal           rapproche par libelle sur le site VIDAL
-    6. eudamed-modèle  rapproche par nom de modele : le moins sur
+    1. entrepôt        read off the packaging with a scanner: the product
+                       itself gave it
+    2. tarif           the supplier publishes it in its own file
+    3. référence=EAN   the reference keyed into the WMS IS a barcode
+    4. eudamed         the manufacturer's UDI declaration, by reference
+    5. vidal           matched by label on the VIDAL website
+    6. eudamed-modèle  matched by model name: the least safe
 
-Un code releve a l'entrepot l'emporte donc sur tout le reste, y compris
-sur le tarif : si les deux different, c'est le carton qui a raison.
+A code read at the warehouse therefore beats everything else, including
+the price list: if the two differ, the box is right.
 
-Trois onglets :
-    "Codes EAN"    tous les articles du perimetre, code et provenance
-    "À compléter"  ce qui manque, en commencant par les articles actifs
-    "Synthèse"     le compte par source et par fournisseur
+Three sheets:
+    "Codes EAN"    every article in scope, code and provenance
+    "À compléter"  what is missing, starting with the active articles
+    "Synthèse"     the count by source and by supplier
 """
 
 from __future__ import annotations
@@ -51,43 +51,42 @@ from main import SORTIE_CHANTIER, WMS_EXTRACTS  # noqa: E402
 EXTRACT = "extract article 28_08.xlsx"
 ANNEE = 2026
 
-# Du plus sur au moins sur : l'ordre decide en cas de conflit
+# From the safest to the least safe: the order decides conflicts
 PRIORITES = ["entrepôt", "fournisseur", "tarif", "référence=EAN", "eudamed",
              "vidal", "libellé", "eudamed-modèle"]
 
 COLONNES = [
     "Code article", "Référence", "Désignation", "Fournisseur",
-    # « Origine référence » dit laquelle des deux colonnes du WMS a
-    # fourni la référence : celle du fournisseur, ou, à défaut, celle du
-    # fabricant. Un rapprochement fait sur la seconde reste ainsi
-    # identifiable.
+    # "Origine référence" says which of the two WMS columns supplied the
+    # reference: the supplier's, or, failing that, the manufacturer's. A
+    # match made on the second one therefore stays identifiable.
     "Réf. fournisseur", "Origine référence",
     "Code EAN", "Source", "Fiabilité", "Concordance",
     "Détail source",
     "Actif", "Motif activité", "Stock", "Emplacement", "Type", "Famille",
 ]
 
-# Trois niveaux plutot que deux : le rapprochement par libelle n'est pas
-# une certitude, mais il n'est pas douteux pour autant — il tombe juste
-# dans environ quatre cas sur cinq. Le confondre avec l'incertain ferait
-# rejeter en bloc plus de mille codes exploitables.
+# Three levels rather than two: a label match is not a certainty, but it
+# is not doubtful for all that: it is right in roughly four cases out of
+# five. Confusing it with the uncertain would reject more than a thousand
+# usable codes outright.
 FIABLES = {"entrepôt", "fournisseur", "tarif", "référence=EAN", "eudamed"}
 PROBABLES = {"libellé", "vidal"}
 
-# Au-dessus de ce score, un rapprochement par libelle est tenu pour
-# probable ; en dessous, il demande une relecture.
+# Above this score, a label match is deemed probable; below it, it calls
+# for a second reading.
 SCORE_PROBABLE = 0.8
 
 
 def _fiabilite(source, score) -> str:
-    """Niveau de confiance d'un code, selon sa source et son score."""
+    """Confidence level of a code, from its source and its score."""
     if not source:
         return ""
     if source in FIABLES:
         return "sûr"
     if source in PROBABLES:
-        # Un score connu affine le jugement ; sans score (VIDAL, dont le
-        # rapprochement est deja filtre), on s'en tient a "probable".
+        # A known score sharpens the judgement; with no score (VIDAL,
+        # whose matching is already filtered), we stay at "probable".
         if score is None or pd.isna(score):
             return "probable"
         return "probable" if float(score) >= SCORE_PROBABLE else "à vérifier"
@@ -95,7 +94,7 @@ def _fiabilite(source, score) -> str:
 
 
 def _consolidation() -> dict:
-    """Codes issus des tarifs et d'EUDAMED, avec leur provenance."""
+    """Codes from the price lists and from EUDAMED, with their provenance."""
     fichier = mise_en_forme.derniere_version(
         SORTIE_CHANTIER, "catalogue_wms_complete.xlsx")
     if fichier is None:
@@ -104,28 +103,28 @@ def _consolidation() -> dict:
                        skiprows=3, dtype=str)
     df = df[df["code_article"].notna() & df["ean"].notna()]
 
-    # La consolidation nomme ses sources autrement : on les ramene au
-    # vocabulaire commun a tout le fichier.
+    # The consolidation names its sources differently: we bring them back
+    # to the vocabulary shared by the whole file.
     equivalences = {
         "tarif": "tarif",
         "référence = EAN": "référence=EAN",
         "eudamed-référence": "eudamed",
         "eudamed-modèle": "eudamed-modèle",
-        # Rapprochement par le libelle : le produit est le bon selon son
-        # nom, mais la reference n'a pas confirme. A relire.
+        # Match on the label: the product is the right one by its name,
+        # but the reference did not confirm it. To be reviewed.
         "libellé": "libellé",
     }
     resultat = {}
     for _, ligne in df.iterrows():
         source = equivalences.get(str(ligne.get("source_ean")), "tarif")
-        # Pour un code venu d'un tarif, le fichier exact permet de
-        # remonter a la ligne d'origine en cas de doute ; pour EUDAMED,
-        # c'est le nom sous lequel le fabricant a declare le produit.
+        # For a code from a price list, the exact file lets us trace back
+        # to the original row in case of doubt; for EUDAMED, it is the
+        # name under which the manufacturer declared the product.
         if source == "tarif":
             detail = ligne.get("fichier_source")
         elif source == "libellé":
-            # Le libelle du fournisseur : c'est lui qu'on relira pour
-            # confirmer que le produit est bien le notre.
+            # The supplier's label: it is the one we will re-read to
+            # confirm the product really is ours.
             detail = ligne.get("libelle_fournisseur")
         else:
             detail = ligne.get("eudamed_nom")
@@ -138,7 +137,7 @@ def _consolidation() -> dict:
 
 
 def _vidal() -> dict:
-    """Codes releves sur le site VIDAL."""
+    """Codes read from the VIDAL website."""
     fichier = mise_en_forme.derniere_version(SORTIE_CHANTIER,
                                              "ean_vidal.xlsx")
     if fichier is None:
@@ -152,8 +151,8 @@ def _vidal() -> dict:
     df = df[df["code_article"].notna() & df["ean"].notna()]
     resultat = {}
     for _, ligne in df.iterrows():
-        # Le libelle VIDAL rapproche : c'est lui qu'on relira pour
-        # verifier que le produit est bien le notre.
+        # The matched VIDAL label: it is the one we will re-read to check
+        # that the product really is ours.
         resultat[ligne["code_article"]] = (
             ligne["ean"], "vidal", str(ligne.get("libelle_vidal") or "")[:80],
             ligne.get("concordance"))
@@ -162,16 +161,16 @@ def _vidal() -> dict:
 
 
 def _fournisseurs() -> dict:
-    """Codes communiques par les fournisseurs, en reponse a nos demandes.
+    """Codes sent by the suppliers, in answer to our requests.
 
-    C'est la meilleure source apres un code lu sur l'emballage : le
-    fabricant a repondu sur LA ligne qu'on lui a soumise. Ni
-    rapprochement, ni deduction, ni homonymie possible — les trois
-    facons dont les autres sources se trompent.
+    This is the best source after a code read off the packaging: the
+    manufacturer answered about THE line we submitted to it. No matching,
+    no deduction, no possible homonym, the three ways the other sources
+    get it wrong.
 
-    Le fichier est produit par `reponses_ean.py`, qui a deja ecarte les
-    cles GS1 fausses et les codes de carton repondus a la place de
-    l'unite de vente.
+    The file is produced by `reponses_ean.py`, which has already
+    discarded wrong GS1 check digits and case codes answered in place of
+    the sales unit.
     """
     fichier = mise_en_forme.derniere_version(SORTIE_CHANTIER,
                                              "ean_fournisseurs.xlsx")
@@ -190,21 +189,20 @@ def _fournisseurs() -> dict:
             f"communiqué par {ligne['Fournisseur']} "
             f"le {str(ligne.get('Reçu le'))[:10]}",
             None)
-    print(f"  fournisseurs  : {len(resultat)} codes")
+    print(f"  suppliers     : {len(resultat)} codes")
     return resultat
 
 
 def _eudamed_reference() -> dict:
-    """Codes releves sur EUDAMED, interroges reference par reference.
+    """Codes read from EUDAMED, queried reference by reference.
 
-    Cette collecte tourne en tache de fond pendant plusieurs jours et
-    ecrit son propre classeur au fil de l'eau. Elle n'entre pas dans la
-    consolidation des catalogues — elle n'a rien a voir avec un tarif —
-    et doit donc etre lue ici, sans quoi ses trouvailles restent dans un
-    fichier que personne ne rapproche.
+    This collection runs in the background for several days and writes
+    its own workbook as it goes. It is not part of the catalogue
+    consolidation, it has nothing to do with a price list, and so it has
+    to be read here; otherwise its findings stay in a file nobody joins.
 
-    C'est un rapprochement par correspondance EXACTE sur la reference
-    fabricant : la source la plus sure apres un code lu sur l'emballage.
+    It is a match on an EXACT correspondence of the manufacturer
+    reference: the safest source after a code read off the packaging.
     """
     fichier = mise_en_forme.derniere_version(SORTIE_CHANTIER,
                                              "ean_eudamed_reference.xlsx")
@@ -223,15 +221,15 @@ def _eudamed_reference() -> dict:
             f"référence {ligne.get('Référence fournisseur')} "
             f"— relevé le {str(ligne.get('Relevé le'))[:10]}",
             None)
-    print(f"  EUDAMED (réf) : {len(resultat)} codes")
+    print(f"  EUDAMED (ref) : {len(resultat)} codes")
     return resultat
 
 
 def _entrepot() -> dict:
-    """Codes releves au scanner, sur l'emballage.
+    """Codes read with a scanner, off the packaging.
 
-    Le dernier releve d'un article l'emporte : si on a scanne deux fois,
-    c'est que la premiere lecture etait a corriger.
+    The most recent reading of an article wins: if we scanned twice, it
+    is because the first reading needed correcting.
     """
     fichier = RACINE / "data" / "collectes.csv"
     if not fichier.exists():
@@ -248,32 +246,32 @@ def _entrepot() -> dict:
                     ean, "entrepôt",
                     f"scanné le {horodatage}"
                     + (f" — {nature}" if nature else ""), None)
-    print(f"  entrepôt      : {len(resultat)} codes")
+    print(f"  warehouse     : {len(resultat)} codes")
     return resultat
 
 
-# Ce qui ne peut pas etre une reference fabricant, verifie sur les 2 947
-# valeurs candidates de l'extract du 28/08.
+# What cannot be a manufacturer reference, checked against the 2 947
+# candidate values of the 28/08 extract.
 REFERENCE_DOUTEUSE = re.compile(
-    # Excel a converti « 8001-08-01 » en date : la corruption est visible
+    # Excel converted "8001-08-01" into a date: the corruption shows
     r"^\d{4}-\d{2}-\d{2}"
-    # Mentions libres saisies a la place d'une reference
+    # Free text typed in instead of a reference
     r"|\b(?:SELON|VOIR|DIVERS|AUCUN|SANS|NEANT|N/?A|NC)\b",
     re.IGNORECASE)
 
 
 def _reference_fabricant_utilisable(valeur) -> str | None:
-    """La reference fabricant, quand elle en est vraiment une.
+    """The manufacturer reference, when it really is one.
 
-    Elle sert de repli quand la reference fournisseur manque — et elle
-    manque sur 3 543 articles, soit la moitie de ce qui reste sans code.
-    C'est meme la meilleure clef pour EUDAMED, qui indexe les
-    declarations du FABRICANT et non du distributeur.
+    It serves as a fallback when the supplier reference is missing, and
+    that one is missing on 3 543 articles, half of what is left without a
+    code. It is even the best key for EUDAMED, which indexes the
+    MANUFACTURER's declarations and not the distributor's.
 
-    Trois formes sont ecartees : les dates nees d'une conversion Excel,
-    les mentions libres du type « SELON TAILLE », et tout ce qui tient
-    en moins de quatre caracteres — « 81 », « AT » ne designent rien et
-    feraient perdre un appel chacun.
+    Three shapes are discarded: dates born of an Excel conversion, free
+    text such as "SELON TAILLE", and anything shorter than four
+    characters: "81" or "AT" designate nothing and would waste one call
+    each.
     """
     texte = nettoyer_texte(valeur)
     if not texte or len(texte) < 4:
@@ -284,7 +282,7 @@ def _reference_fabricant_utilisable(valeur) -> str | None:
 
 
 def _reference(article) -> tuple[str | None, str]:
-    """(reference a interroger, d'ou elle vient) pour un article du WMS."""
+    """(reference to query, where it comes from) for a WMS article."""
     fournisseur = nettoyer_texte(article.get("Ref. art. four."))
     if fournisseur:
         return fournisseur, "fournisseur"
@@ -296,7 +294,7 @@ def _reference(article) -> tuple[str | None, str]:
 
 
 def _articles() -> pd.DataFrame:
-    """Le perimetre, avec stock, activite et emplacement."""
+    """The scope, with stock, activity and location."""
     df = pd.read_excel(chemin_lisible(WMS_EXTRACTS / EXTRACT), dtype=str)
     df = perimetre.filtrer(df)
 
@@ -312,9 +310,9 @@ def _articles() -> pd.DataFrame:
 
 
 def main() -> None:
-    print("Sources :")
+    print("Sources:")
     sources = {}
-    # Du moins sur au plus sur : les meilleurs ecrasent les autres
+    # From the least safe to the safest: the best overwrite the others
     for lecture in (_vidal, _consolidation, _eudamed_reference,
                     _fournisseurs, _entrepot):
         for code, valeur in lecture().items():
@@ -324,8 +322,8 @@ def main() -> None:
             ):
                 sources[code] = valeur
 
-    # eudamed-modèle est le seul rapprochement dont on sait qu'il se
-    # trompe en masse : on le garde, signale, jamais prioritaire.
+    # eudamed-modèle is the only match we know gets it wrong en masse: we
+    # keep it, flagged, never given priority.
     articles = _articles()
     lignes = []
     for _, article in articles.iterrows():
@@ -338,13 +336,13 @@ def main() -> None:
             "Référence": article.get("Référence"),
             "Désignation": article.get("Libellé déclinaison ^(1)"),
             "Fournisseur": article.get("Nom fournisseur"),
-            # La reference fournisseur d'abord — c'est elle qui rapproche
-            # les tarifs. A defaut, celle du fabricant, qui existe sur
-            # 2 947 articles la ou l'autre manque.
+            # The supplier reference first: it is the one that joins the
+            # price lists. Failing that, the manufacturer's, which exists
+            # on 2 947 articles where the other one is missing.
             #
-            # `nettoyer_texte` et non un simple `or` : une cellule vide
-            # lue par pandas vaut NaN, et NaN est VRAI en Python. Le
-            # repli ne se serait jamais declenche.
+            # `nettoyer_texte` and not a plain `or`: an empty cell read by
+            # pandas is NaN, and NaN is TRUE in Python. The fallback would
+            # never have fired.
             "Réf. fournisseur": _reference(article)[0],
             "Origine référence": _reference(article)[1],
             "Code EAN": ean,
@@ -404,9 +402,9 @@ def main() -> None:
         }},
     )
 
-    print(f"\n{len(tout)} articles | {len(avec)} avec EAN "
+    print(f"\n{len(tout)} articles | {len(avec)} with an EAN "
           f"({100 * len(avec) / len(tout):.0f} %)")
-    print(f"  dont actifs : {actifs_ok} / {len(actifs)}")
+    print(f"  of which active: {actifs_ok} / {len(actifs)}")
     for niveau in ("sûr", "probable", "à vérifier"):
         nombre = int((avec["Fiabilité"] == niveau).sum())
         if nombre:

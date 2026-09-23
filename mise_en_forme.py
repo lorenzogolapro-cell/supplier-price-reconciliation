@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Mise en forme des classeurs Excel produits.
+Formatting of the Excel workbooks produced.
 
-Le fichier doit etre exploitable des l'ouverture : en-tetes lisibles, volets
-figes, filtres prets, largeurs adaptees au contenu reel et formats de nombre
-corrects. Les anomalies sont mises en evidence par la couleur pour eviter
-d'avoir a les chercher.
+The file has to be usable the moment it opens: readable headers, frozen
+panes, filters ready, widths matched to the actual content and correct
+number formats. Anomalies are highlighted with colour so that nobody has
+to go looking for them.
 
-Point critique : les identifiants (EAN, references, codes article) sont
-forces en format Texte. Sans cela Excel perd les zeros de tete et bascule
-les EAN en notation scientifique des la premiere ouverture.
+Critical point: identifiers (EAN codes, references, item codes) are
+forced to Text format. Without that, Excel drops leading zeros and flips
+EAN codes into scientific notation on the very first opening.
 """
 
 from __future__ import annotations
@@ -26,20 +26,20 @@ BLEU_ENTETE = "2E5B8A"
 BLEU_ALTERNE = "F2F6FC"
 BLEU_PALIER = "DDEBF7"
 GRIS_BORDURE = "D9D9D9"
-ROUGE_CLAIR = "FFC7CE"     # prix incoherent
-ROUGE_VIF = "FF5B5B"       # prix nul ou negatif : bloquant
-ORANGE_CLAIR = "FFE0B2"    # EAN manquant / proposition a arbitrer
-VERT_CLAIR = "C6EFCE"      # proposition recommandee
+ROUGE_CLAIR = "FFC7CE"     # inconsistent price
+ROUGE_VIF = "FF5B5B"       # zero or negative price: blocking
+ORANGE_CLAIR = "FFE0B2"    # missing EAN / proposal to arbitrate
+VERT_CLAIR = "C6EFCE"      # recommended proposal
 
 POLICE = "Arial"
 
-# --- formats de nombre -----------------------------------------------------
-FORMAT_EURO = '# ##0.00\\ "â‚¬"'
+# --- number formats --------------------------------------------------------
+FORMAT_EURO = '# ##0.00\\ "€"'
 FORMAT_POURCENT = "0.0 %"
 FORMAT_ENTIER = "0"
 FORMAT_TEXTE = "@"
 
-# Colonnes forcees en texte, quel que soit l'onglet
+# Columns forced to text, whatever the tab
 COLONNES_TEXTE = {
     "fournisseur", "ref_fournisseur", "designation", "ean", "paliers",
     "code_lppr", "dispositif_medical", "origine", "fichier_source",
@@ -49,19 +49,19 @@ COLONNES_TEXTE = {
     "designation_wms", "dans_wms", "methode_rapprochement", "ean_valide",
     "type_anomalie", "detail", "diagnostic", "indicateur",
     "statut", "motif", "raison", "palier", "etablissements",
-    # liste interne "Ref catalogue pro"
+    # internal list "Ref catalogue pro"
     "reference_distributeur", "designation_distributeur", "fournisseur_devine",
     "classe_dm", "source", "commentaire_quantite", "fichier_refs",
-    # demande de codes EAN adressee au fournisseur
-    "Produit", "Tailles concernÃ©es", "RÃ©f. Fournisseur B connues",
-    "CODE EAN (Ã  complÃ©ter)", "references", "codes_article",
+    # request for EAN codes sent to the supplier
+    "Produit", "Tailles concernées", "Réf. Fournisseur B connues",
+    "CODE EAN (à compléter)", "references", "codes_article",
 }
 
 COLONNES_EURO = {
     "prix_achat_unitaire_ht", "prix_colis_ht", "tarif_public_ttc",
     "prix_recalcule", "ecart_prix", "palier2_prix_ht", "palier3_prix_ht",
     "eco_part_ht", "montant_lppr",
-    # propositions d'achat
+    # purchase proposals
     "prix_unitaire_normal", "prix_unitaire_propose", "cout_total_normal",
     "cout_total_propose", "economie_unitaire_eur", "economie_totale_eur",
     "surcout_tresorerie", "prix_unitaire_palier",
@@ -75,17 +75,17 @@ COLONNES_POURCENT = {
 COLONNES_ENTIER = {
     "conditionnement", "palier2_qte", "palier3_qte", "nb_articles_wms",
     "valeur", "longueur_ean",
-    # propositions d'achat
+    # purchase proposals
     "qte_normale", "qte_proposee", "stock_actuel", "stock_maxi", "qte_palier",
     # Top 200
     "rang_top200", "ventes_annee",
 }
 
-# Colonnes a deux decimales (consommation, couverture)
+# Two-decimal columns (consumption, coverage)
 COLONNES_DECIMAL = {"conso_moyenne_mensuelle", "couverture_mois"}
 FORMAT_DECIMAL = "0.00"
 
-# --- largeurs --------------------------------------------------------------
+# --- widths ----------------------------------------------------------------
 LARGEURS = {
     "ref_fournisseur": 14,
     "reference_wms": 14,
@@ -98,13 +98,13 @@ LARGEURS = {
     "detail": 42,
     "motif": 95,
     "raison": 46,
-    # demande de codes EAN adressee au fournisseur
+    # request for EAN codes sent to the supplier
     "Produit": 52,
-    "Tailles concernÃ©es": 60,
+    "Tailles concernées": 60,
     "Nb de tailles": 12,
-    "Nb dÃ©clinaisons": 14,
-    "RÃ©f. Fournisseur B connues": 34,
-    "CODE EAN (Ã  complÃ©ter)": 24,
+    "Nb déclinaisons": 14,
+    "Réf. Fournisseur B connues": 34,
+    "CODE EAN (à compléter)": 24,
     "statut": 14,
     "conso_moyenne_mensuelle": 13,
     "couverture_mois": 12,
@@ -124,7 +124,7 @@ LARGEUR_QTE = 12
 LARGEUR_TAUX = 10
 LARGEUR_DEFAUT = 18
 
-# --- objets de style partages (un seul exemplaire, pour la memoire) --------
+# --- shared style objects (one instance only, to save memory) --------------
 _bordure = Side(style="thin", color=GRIS_BORDURE)
 BORDURE = Border(left=_bordure, right=_bordure, top=_bordure, bottom=_bordure)
 
@@ -147,7 +147,7 @@ ALIGN_DROITE = Alignment(horizontal="right", vertical="center", wrap_text=False)
 
 
 def _largeur(entete: str) -> float:
-    """Largeur adaptee au contenu attendu de la colonne."""
+    """Width matched to the column's expected content."""
     if entete in LARGEURS:
         return LARGEURS[entete]
     if entete in COLONNES_EURO:
@@ -160,7 +160,7 @@ def _largeur(entete: str) -> float:
 
 
 def _format_et_alignement(entete: str) -> tuple[str | None, Alignment]:
-    """Format de nombre et alignement associes a une colonne."""
+    """Number format and alignment attached to a column."""
     if entete in COLONNES_TEXTE:
         return FORMAT_TEXTE, ALIGN_GAUCHE
     if entete in COLONNES_EURO:
@@ -181,11 +181,11 @@ def formater_feuille(
     titre: str | None = None,
     sous_titre: str | None = None,
 ) -> None:
-    """Applique la mise en forme complete a une feuille.
+    """Applies the full formatting to a sheet.
 
-    `ligne_entete` permet de reserver des lignes de synthese au-dessus du
-    tableau. `figer_colonne` est l'indice (1-based) de la premiere colonne
-    qui doit encore defiler : 3 garde reference et designation visibles.
+    `ligne_entete` makes it possible to reserve summary rows above the
+    table. `figer_colonne` is the (1-based) index of the first column
+    that should still scroll: 3 keeps reference and description visible.
     """
     if feuille.max_row < ligne_entete:
         return
@@ -194,7 +194,7 @@ def formater_feuille(
     nb_colonnes = len(entetes)
     premiere_donnee = ligne_entete + 1
 
-    # --- lignes de synthese au-dessus du tableau --------------------------
+    # --- summary rows above the table -------------------------------------
     if titre:
         cellule = feuille.cell(row=1, column=1, value=titre)
         cellule.font = FONT_TITRE
@@ -204,7 +204,7 @@ def formater_feuille(
         cellule.font = FONT_SOUS_TITRE
         cellule.alignment = ALIGN_GAUCHE
 
-    # --- en-tete ----------------------------------------------------------
+    # --- header -----------------------------------------------------------
     for index in range(1, nb_colonnes + 1):
         cellule = feuille.cell(row=ligne_entete, column=index)
         cellule.font = FONT_ENTETE
@@ -216,11 +216,11 @@ def formater_feuille(
         )
     feuille.row_dimensions[ligne_entete].height = 30
 
-    # --- corps ------------------------------------------------------------
+    # --- body -------------------------------------------------------------
     formats = [_format_et_alignement(entete) for entete in entetes]
 
     for numero in range(premiere_donnee, feuille.max_row + 1):
-        # Alternance discrete une ligne sur deux
+        # Discreet banding every other row
         alterne = (numero - premiere_donnee) % 2 == 1
         for index in range(1, nb_colonnes + 1):
             cellule = feuille.cell(row=numero, column=index)
@@ -233,7 +233,7 @@ def formater_feuille(
             if alterne:
                 cellule.fill = FILL_ALTERNE
 
-    # --- volets et filtre -------------------------------------------------
+    # --- panes and filter -------------------------------------------------
     feuille.freeze_panes = feuille.cell(
         row=premiere_donnee, column=figer_colonne
     ).coordinate
@@ -243,10 +243,10 @@ def formater_feuille(
 
 
 def surligner_anomalies(feuille, ligne_entete: int = 1) -> None:
-    """Met en evidence les lignes et cellules problematiques.
+    """Highlights the problematic rows and cells.
 
-    Ne s'applique qu'aux colonnes reellement presentes dans la feuille :
-    chaque onglet ne porte pas les memes informations.
+    Only applies to the columns actually present in the sheet: not every
+    tab carries the same information.
     """
     entetes = [cellule.value for cellule in feuille[ligne_entete]]
     index = {nom: position for position, nom in enumerate(entetes, start=1)}
@@ -256,10 +256,10 @@ def surligner_anomalies(feuille, ligne_entete: int = 1) -> None:
     colonne_coherent = index.get("prix_coherent")
     colonne_prix = index.get("prix_achat_unitaire_ht")
     colonne_ean = index.get("ean")
-    # Sur l'onglet Anomalies, c'est le type d'anomalie qui donne la gravite :
-    # une ligne "prix nul" y figure justement parce que la cellule est vide.
+    # On the Anomalies tab, it is the anomaly type that gives the severity:
+    # a "zero price" row is there precisely because the cell is empty.
     colonne_type = index.get("type_anomalie")
-    # Onglet des propositions d'achat : le statut colore la ligne entiere
+    # Purchase proposals tab: the status colours the whole row
     colonne_statut = index.get("statut")
     colonnes_palier = [
         index[nom]
@@ -269,7 +269,7 @@ def surligner_anomalies(feuille, ligne_entete: int = 1) -> None:
     ]
 
     for numero in range(premiere_donnee, feuille.max_row + 1):
-        # Propositions d'achat : vert si recommande, orange si a arbitrer
+        # Purchase proposals: green if recommended, orange if to arbitrate
         if colonne_statut:
             statut = feuille.cell(row=numero, column=colonne_statut).value
             remplissage = {
@@ -281,8 +281,8 @@ def surligner_anomalies(feuille, ligne_entete: int = 1) -> None:
                     feuille.cell(row=numero, column=colonne).fill = remplissage
             continue
 
-        # Prix nul, negatif OU absent : bloquant, toute la ligne en rouge vif.
-        # Un prix manquant empeche de commander tout autant qu'un prix a zero.
+        # Zero, negative OR missing price: blocking, whole row in bright red.
+        # A missing price blocks ordering just as much as a price of zero.
         bloquant = False
         if colonne_prix:
             valeur = feuille.cell(row=numero, column=colonne_prix).value
@@ -290,12 +290,12 @@ def surligner_anomalies(feuille, ligne_entete: int = 1) -> None:
                 isinstance(valeur, (int, float)) and valeur <= 0
             )
 
-        # Prix incoherent : toute la ligne en rouge clair
+        # Inconsistent price: whole row in light red
         incoherent = False
         if colonne_coherent:
             incoherent = feuille.cell(row=numero, column=colonne_coherent).value is False
 
-        # L'onglet Anomalies porte le verdict dans sa premiere colonne
+        # The Anomalies tab carries the verdict in its first column
         if colonne_type:
             type_anomalie = feuille.cell(row=numero, column=colonne_type).value
             bloquant = type_anomalie == "Prix d'achat nul ou negatif"
@@ -305,36 +305,36 @@ def surligner_anomalies(feuille, ligne_entete: int = 1) -> None:
             remplissage = FILL_BLOQUANT if bloquant else FILL_INCOHERENT
             for colonne in range(1, nb_colonnes + 1):
                 feuille.cell(row=numero, column=colonne).fill = remplissage
-            continue  # la couleur de ligne prime sur les mises en evidence locales
+            continue  # the row colour wins over local highlights
 
-        # Palier disponible : colonnes de palier en bleu clair
+        # Price break available: price-break columns in light blue
         if colonnes_palier:
             prix_palier = index.get("palier2_prix_ht") or index.get("palier3_prix_ht")
             if prix_palier and feuille.cell(row=numero, column=prix_palier).value:
                 for colonne in colonnes_palier:
                     feuille.cell(row=numero, column=colonne).fill = FILL_PALIER
 
-        # EAN manquant : cellule EAN en orange
+        # Missing EAN: EAN cell in orange
         if colonne_ean and not feuille.cell(row=numero, column=colonne_ean).value:
             feuille.cell(row=numero, column=colonne_ean).fill = FILL_EAN_VIDE
 
 
 def derniere_version(dossier, nom: str) -> Path | None:
-    """La version de reference d'un fichier de sortie.
+    """The reference version of an output file.
 
-    Deux pieges se repondent, et il faut les eviter tous les deux.
+    Two traps answer each other, and both have to be avoided.
 
-    Se fier a la date de modification ne marche pas : ouvrir un vieux
-    fichier dans Excel suffit a le rajeunir, et il passerait pour le plus
-    recent.
+    Trusting the modification date does not work: simply opening an old
+    file in Excel is enough to make it look younger, and it would then
+    pass for the most recent one.
 
-    Mais se fier au seul nom canonique ne marche pas non plus : quand ce
-    fichier est ouvert dans Excel, `chemin_ecriture` ecrit a cote sous un
-    nom horodate, et c'est cette copie qui porte les donnees fraiches.
+    But trusting the canonical name alone does not work either: when
+    that file is open in Excel, `chemin_ecriture` writes next to it under
+    a timestamped name, and it is that copy which carries the fresh data.
 
-    On arbitre donc sur l'horodatage inscrit DANS LE NOM des copies, qui
-    lui ne ment pas : si la plus recente est posterieure a la derniere
-    ecriture du canonique, c'est elle qui fait foi.
+    So the decision is made on the timestamp written INTO THE NAME of the
+    copies, which does not lie: if the most recent one is later than the
+    last write of the canonical file, it is the one that is authoritative.
     """
     dossier = Path(dossier)
     principal = dossier / nom
@@ -342,12 +342,12 @@ def derniere_version(dossier, nom: str) -> Path | None:
 
     from datetime import datetime
 
-    # Une copie n'est prise au serieux que si son nom et sa date de
-    # modification concordent. Un ecart important signe une reouverture
-    # dans Excel, qui rajeunit le fichier sans rien y changer : c'est le
-    # piege qui faisait passer une consolidation de la veille pour la
-    # plus fraiche.
-    ECART_TOLERE = 3600  # une heure
+    # A copy is only taken seriously if its name and its modification
+    # date agree. A large gap is the signature of a reopening in Excel,
+    # which makes the file look younger without changing anything in it:
+    # that is the trap that made yesterday's consolidation pass for the
+    # freshest one.
+    ECART_TOLERE = 3600  # one hour
 
     candidats = []
     for chemin in dossier.glob(f"{souche} (*){extension}"):
@@ -371,20 +371,20 @@ def derniere_version(dossier, nom: str) -> Path | None:
 
 
 def lire(chemin, feuille: str, colonne_temoin: str, limite: int = 8):
-    """Lit une de NOS sorties sans se fier a la position de l'en-tete.
+    """Reads one of OUR outputs without trusting the header position.
 
-    Nos classeurs portent un titre et un sous-titre au-dessus du tableau,
-    d'ou les `skiprows=3` qui parsement le depot. Le probleme est qu'une
-    simple ouverture dans Excel peut deplacer cette ligne : le 14/09,
-    « EAN fiables.xlsx » a ete converti en tableau et une ligne
-    « Colonne1, Colonne2… » s'est glissee au-dessus. Un `skiprows` fixe
-    lit alors des donnees DECALEES sans lever la moindre erreur — la pire
-    espece de defaut, celle qui rend des chiffres au lieu d'une exception.
+    Our workbooks carry a title and a subtitle above the table, hence the
+    `skiprows=3` scattered across the repository. The problem is that
+    simply opening the file in Excel can move that row: on 14/09,
+    "EAN fiables.xlsx" was converted into a table and a
+    "Colonne1, Colonne2..." row slipped in above. A fixed `skiprows` then
+    reads SHIFTED data without raising the slightest error, the worst
+    kind of defect, the one that returns figures instead of an exception.
 
-    On cherche donc l'en-tete par sa colonne temoin, dans les `limite`
-    premieres lignes. Un fichier intact est trouve du premier coup ; un
-    fichier remanie par Excel l'est aussi. Si la colonne reste
-    introuvable, on s'arrete : mieux vaut un arret qu'un tableau faux.
+    So we look for the header by its witness column, within the first
+    `limite` rows. An intact file is found on the first try; a file
+    reworked by Excel is found too. If the column stays missing, we stop:
+    better a halt than a wrong table.
     """
     import pandas as pd
 
@@ -396,26 +396,26 @@ def lire(chemin, feuille: str, colonne_temoin: str, limite: int = 8):
             df = pd.read_excel(chemin_lisible(chemin), sheet_name=feuille,
                                header=entete, dtype=str)
         except ValueError:
-            # Feuille absente : inutile d'essayer les autres lignes.
+            # Sheet missing: no point trying the other rows.
             raise SystemExit(
-                f"Feuille « {feuille} » absente de {chemin.name}")
+                f"Sheet '{feuille}' missing from {chemin.name}")
         df.columns = [str(c).strip() for c in df.columns]
         if colonne_temoin in df.columns:
             if entete != 3:
-                print(f"  ! {chemin.name} : en-tête ligne {entete + 1} "
-                      f"et non 4 — fichier remanié dans Excel")
+                print(f"  ! {chemin.name}: header on row {entete + 1} "
+                      f"and not 4, file reworked in Excel")
             return df
-    raise SystemExit(f"Colonne « {colonne_temoin} » introuvable dans "
-                     f"{chemin.name} (feuille « {feuille} »). "
-                     f"Le fichier a-t-il été remanié ?")
+    raise SystemExit(f"Column '{colonne_temoin}' not found in "
+                     f"{chemin.name} (sheet '{feuille}'). "
+                     f"Has the file been reworked?")
 
 
 def chemin_ecriture(chemin: Path) -> Path:
-    """Chemin reellement utilisable pour ecrire, meme fichier ouvert.
+    """A path that can really be written to, even with the file open.
 
-    Excel verrouille les classeurs ouverts. Plutot que d'interrompre un
-    traitement de plusieurs minutes, on ecrit a cote sous un nom horodate
-    et on le signale : l'utilisateur compare puis remplace.
+    Excel locks open workbooks. Rather than aborting a job that takes
+    several minutes, we write next to it under a timestamped name and say
+    so: the user compares, then replaces.
     """
     from datetime import datetime
 
@@ -428,8 +428,8 @@ def chemin_ecriture(chemin: Path) -> Path:
     except PermissionError:
         horodatage = datetime.now().strftime("%Y%m%d-%H%M")
         secours = chemin.with_name(f"{chemin.stem} ({horodatage}){chemin.suffix}")
-        print(f"  ! {chemin.name} est ouvert dans Excel")
-        print(f"    Ã©criture dans {secours.name}")
+        print(f"  ! {chemin.name} is open in Excel")
+        print(f"    writing to {secours.name}")
         return secours
 
 
@@ -437,9 +437,9 @@ def formater(
     chemin: Path,
     options: dict[str, dict] | None = None,
 ) -> None:
-    """Formate tous les onglets d'un classeur.
+    """Formats every tab of a workbook.
 
-    `options` permet de personnaliser un onglet :
+    `options` allows a tab to be customised:
         {"Catalogue": {"ligne_entete": 4, "figer_colonne": 3,
                        "titre": "...", "sous_titre": "..."}}
     """

@@ -1,21 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Extracteur generique pour les tarifs Excel.
+Generic extractor for Excel price lists.
 
-Les fournisseurs ne partagent aucune mise en page, mais ils nomment tous
-leurs colonnes de la meme facon : une reference, un libelle, un prix, et
-parfois un code EAN. Ce module repere ces colonnes par leur intitule plutot
-que par leur position, ce qui evite d'ecrire un extracteur par fournisseur.
+Suppliers share no layout whatsoever, but they all name their columns the
+same way: a reference, a label, a price, and sometimes an EAN. This module
+locates those columns by their heading rather than by their position,
+which saves writing one extractor per supplier.
 
-Il ne remplace pas les extracteurs dedies : quand un tarif a une logique
-propre (paliers nommes dans l'en-tete chez le Fournisseur S, remise
-appliquee au HT chez le Fournisseur A), l'extracteur specifique reste plus
-juste. Le generique
-sert a couvrir rapidement le reste.
+It does not replace the dedicated extractors: when a price list has a
+logic of its own (tiers named in the header at Supplier S, a discount
+applied to the net price at Supplier A), the specific extractor stays more
+accurate. The generic one is there to cover the rest quickly.
 
-Precaution principale : ne jamais confondre un prix de vente avec un prix
-d'achat. Les colonnes "prix public", "PVC", "tarif conseille" ou "location"
-sont explicitement exclues.
+Main precaution: never mistake a selling price for a purchase price. The
+"prix public", "PVC", "tarif conseille" and "location" columns are
+explicitly excluded.
 """
 
 from __future__ import annotations
@@ -39,13 +38,13 @@ from extracteurs.base import (
     valider_paliers,
 )
 
-# --- vocabulaire des colonnes ---------------------------------------------
+# --- column vocabulary ------------------------------------------------------
 
 REFERENCE = [
     "referencefournisseur", "referencesfournisseur", "reffournisseur",
     "referencearticle", "referencefabricant", "codearticle", "codeproduit",
     "reference", "references", "ref", "refart", "code", "codes", "article",
-    "codeean",  # certains tarifs n'ont que l'EAN comme reference
+    "codeean",  # some price lists only have the EAN as a reference
 ]
 
 DESIGNATION = [
@@ -56,53 +55,55 @@ DESIGNATION = [
 
 EAN = ["ean", "gtin", "codeean", "codegtin", "codebarre", "eancode", "ean13"]
 
-# Ce qui, dans l'intitule, designe le COLIS et non la piece : "EAN
-# carton", "GTIN IUD (CDT)", "EAN Boîte". Le Fournisseur CV va jusqu'a
-# trois niveaux — unite, boite, carton.
+# What, in a heading, designates the CASE rather than the piece: "EAN
+# carton", "GTIN IUD (CDT)", "EAN Boîte". Supplier CV goes as far as
+# three levels: unit, box, carton.
 COLIS = ["carton", "cdt", "conditionnement", "colis", "palette", "caisse",
          "boite", "outer"]
 
-# Intitules qui designent SANS AMBIGUITE notre prix d'achat, meme s'ils
-# contiennent un mot par ailleurs suspect. "Prix de vente client" est le
-# prix auquel le fournisseur NOUS vend : c'est bien notre prix d'achat,
-# alors que le filtre d'exclusion ci-dessous ecarterait le mot "vente".
+# Headings that designate our purchase price UNAMBIGUOUSLY, even when
+# they contain an otherwise suspect word. "Prix de vente client" is the
+# price at which the supplier sells to US: that really is our purchase
+# price, whereas the exclusion filter below would reject the word
+# "vente".
 PRIX_ACHAT_EXPLICITE = [
     "prixdeventeclient", "prixventeclient", "votretarif", "votreprix",
     "tarifnet", "prixnet", "prixdachat", "prixachat", "franco",
-    # « Prix Vente REMISE » (18/09) — le mot « remise » leve l'ambiguite que
-    # « vente » introduit. Une colonne qui dit REMISE n'est jamais un prix
-    # public : c'est le prix apres notre remise negociee, donc le notre.
+    # "Prix Vente REMISE" (18/09): the word "remise" (discount) lifts the
+    # ambiguity that "vente" (sale) introduces. A column that says REMISE
+    # is never a list price: it is the price after our negotiated
+    # discount, hence ours.
     #
-    # Sans cette entree, le tarif du Fournisseur CX sortait le « Prix
-    # base » : les sacs isothermes (REF0001 a REF0004) partaient a
-    # 22,00 EUR alors que la colonne d'a cote annonce 15,00 — et 15,00 est
-    # a la fois l'ancien PA du responsable des prix ET le prix reellement
-    # paye en commande. Trois sources d'accord contre une.
-    # (references et montants ci-dessus : valeurs d'exemple)
+    # Without this entry, Supplier CX's price list yielded the "Prix
+    # base" column: the cooler bags (REF0001 to REF0004) went out at
+    # 22.00 EUR while the column next to it says 15.00, and 15.00 is both
+    # the pricing manager's former purchase price AND the price actually
+    # paid on order. Three sources agreeing against one.
+    # (references and amounts above: sample values)
     #
-    # On n'ajoute PAS « prixvente » tout court : chez un autre fournisseur
-    # ce serait le prix de revente, et le filtre d'exclusion a raison de
-    # s'en mefier. C'est le mot « remise » qui autorise l'exception.
+    # We do NOT add plain "prixvente": at another supplier that would be
+    # the resale price, and the exclusion filter is right to distrust it.
+    # It is the word "remise" that licenses the exception.
     "prixventeremise", "prixdeventeremise", "prixventeremis",
 ]
 
-# Prix d'achat : ce qu'on cherche
+# Purchase price: what we are looking for
 PRIX_ACHAT = [
     "prixachat", "prixdachat", "tarifnet", "prixnet", "netht", "prixnetht",
     "tarifachat", "prixremise", "prixcession", "achatht", "prixhtnet",
     "votretarif", "tarifs", "tarif", "prixht", "prix",
 ]
 
-# Un prix au colis n'est pas un prix unitaire : le retenir multiplie le
-# PA par le conditionnement, ce qui a deja produit un ecart x109.
+# A per-case price is not a unit price: taking it multiplies the purchase
+# price by the pack size, which has already produced a x109 gap.
 AU_COLIS = ["carton", "palette", "colis", "boiteau", "parlot", "aulot",
             "sachetde"]
 
-# Ce qui designe le prix reellement paye a l'unite : c'est celui-la, ou
-# le prix remise unitaire, jamais le prix public.
+# What designates the price actually paid per unit: that one, or the
+# discounted unit price, never the list price.
 A_LUNITE = ["unitaire", "alunite", "lunite", "unitee", "remise", "net"]
 
-# Prix de vente : ce qu'il ne faut surtout pas prendre pour un prix d'achat
+# Selling price: what must on no account be taken for a purchase price
 PRIX_EXCLUS = [
     "public", "pvc", "conseille", "conseil", "ttc", "vente", "revente",
     "location", "loyer", "lpp", "lppr", "remboursement", "psl", "pvp",
@@ -117,12 +118,12 @@ CONDITIONNEMENT = [
 ]
 CODE_LPPR = ["codelppr", "codelpp", "lpprindividuel", "nouveaucodelppr"]
 
-# Une colonne de quantite de palier : "x 10", "par 12", "a partir de 6"
+# A tier quantity column: "x 10", "par 12", "a partir de 6"
 QUANTITE = re.compile(r"(?:x|par|apartirde|des)\s*(\d+)")
 
 
 def _normaliser(valeur) -> str:
-    """Minuscule sans accent, espace ni ponctuation."""
+    """Lower case, without accents, spaces or punctuation."""
     if valeur is None:
         return ""
     texte = unicodedata.normalize("NFKD", str(valeur))
@@ -131,7 +132,7 @@ def _normaliser(valeur) -> str:
 
 
 def _correspond(normalise: str, vocabulaire: list[str]) -> bool:
-    """L'intitule commence-t-il par l'un des termes du vocabulaire ?"""
+    """Does the heading start with one of the vocabulary terms?"""
     return any(normalise.startswith(terme) for terme in vocabulaire)
 
 
@@ -140,11 +141,11 @@ def _contient(normalise: str, termes: list[str]) -> bool:
 
 
 def trouver_entete(brut: pd.DataFrame, max_lignes: int = 25) -> int | None:
-    """Indice de la ligne d'en-tete, ou None si aucune n'est reconnue.
+    """Index of the header row, or None if none is recognised.
 
-    Une ligne fait un en-tete credible quand elle porte au moins une
-    designation et une reference ou un prix. On retient la premiere, et a
-    defaut celle qui reconnait le plus de colonnes.
+    A row makes a credible header when it carries at least a label and
+    either a reference or a price. We keep the first one, failing that
+    the one that recognises the most columns.
     """
     meilleur, score_max = None, 0
 
@@ -173,11 +174,11 @@ def trouver_entete(brut: pd.DataFrame, max_lignes: int = 25) -> int | None:
 
 
 def analyser_colonnes(entetes) -> dict:
-    """Associe chaque champ du schema a un index de colonne.
+    """Maps each schema field to a column index.
 
-    Le prix d'achat est choisi avec soin : parmi les colonnes de prix non
-    exclues, celle dont l'intitule est le plus explicite l'emporte
-    ("tarif net HT" avant "prix"). Les autres deviennent des paliers.
+    The purchase price is chosen with care: among the price columns that
+    were not excluded, the one with the most explicit heading wins
+    ("tarif net HT" before "prix"). The others become tiers.
     """
     mapping = {}
     prix_candidats = []
@@ -188,19 +189,19 @@ def analyser_colonnes(entetes) -> dict:
             continue
 
         if _contient(normalise, EAN):
-            # Beaucoup de tarifs publient deux codes : celui de la piece
-            # et celui du colis (« EAN unité » / « EAN carton », « GTIN
-            # IUD (Unité) » / « (CDT) »). Le premier est celui qu'on
-            # scanne au picking, et c'est lui que porte `ean` ; le second
-            # est garde a part pour la reception.
+            # Many price lists publish two codes: one for the piece and
+            # one for the case ("EAN unité" / "EAN carton", "GTIN IUD
+            # (Unité)" / "(CDT)"). The first is the one scanned at
+            # picking, and it is the one `ean` carries; the second is
+            # kept separately for goods-in.
             if _contient(normalise, COLIS):
                 mapping.setdefault("ean_conditionnement", index)
                 continue
             if "ean" not in mapping:
                 mapping["ean"] = index
                 continue
-            # Un second code sans mention de colisage : on le garde
-            # quand meme plutot que de le perdre.
+            # A second code with no mention of packaging level: keep it
+            # anyway rather than lose it.
             mapping.setdefault("ean_conditionnement", index)
             continue
         if _correspond(normalise, CODE_LPPR) and "code_lppr" not in mapping:
@@ -222,10 +223,10 @@ def analyser_colonnes(entetes) -> dict:
 
         explicite = _correspond(normalise, PRIX_ACHAT_EXPLICITE)
         if explicite or _correspond(normalise, PRIX_ACHAT):
-            # Un intitule explicite echappe au filtre d'exclusion
+            # An explicit heading escapes the exclusion filter
             if not explicite and _contient(normalise, PRIX_EXCLUS):
-                continue  # prix de vente, location, LPP : pas un prix d'achat
-            # Plus l'intitule est explicite, plus il est prioritaire
+                continue  # selling price, rental, LPP: not a purchase price
+            # The more explicit the heading, the higher its priority
             priorite = next(
                 (len(PRIX_ACHAT) - rang
                  for rang, terme in enumerate(PRIX_ACHAT)
@@ -235,12 +236,12 @@ def analyser_colonnes(entetes) -> dict:
             if explicite:
                 priorite += 100
 
-            # Regle d'achat, donnee par les appros : le prix a retenir est
-            # le prix UNITAIRE de vente ou le prix REMISE unitaire, jamais
-            # le prix public et jamais un prix au colis. Le Fournisseur CV
-            # publie « prix indicatif de la boite au Carton » juste a cote de
-            # « prix indicatif de l'unitee a la boite » : les deux portent
-            # les memes mots-cles, seule cette ponderation les separe.
+            # Purchasing rule, given by the buyers: the price to keep is
+            # the UNIT selling price or the unit DISCOUNTED price, never
+            # the list price and never a per-case price. Supplier CV
+            # publishes "prix indicatif de la boite au Carton" right next
+            # to "prix indicatif de l'unitee a la boite": both carry the
+            # same keywords, only this weighting separates them.
             if any(m in normalise for m in AU_COLIS):
                 priorite -= 50
             if any(m in normalise for m in A_LUNITE):
@@ -257,18 +258,18 @@ def analyser_colonnes(entetes) -> dict:
             mapping["ref_fournisseur"] = index
             continue
 
-    # Le prix unitaire est celui de quantite 1 le plus explicite ;
-    # les colonnes de quantite superieure deviennent les paliers.
+    # The unit price is the most explicit one at quantity 1; columns with
+    # a higher quantity become the tiers.
     prix_candidats.sort(key=lambda c: (c[1], -c[2]))
     mapping["_prix"] = prix_candidats
     return mapping
 
 
 def extract(path, fournisseur: str | None = None) -> "pd.DataFrame":  # noqa: F821
-    """Extrait un tarif Excel quelconque vers le schema commun.
+    """Extracts any Excel price list into the common schema.
 
-    `fournisseur` permet de nommer la source ; a defaut le nom du dossier
-    parent est utilise.
+    `fournisseur` names the source; failing that the parent folder name
+    is used.
     """
     path = Path(path)
     nom_fournisseur = fournisseur or path.parent.name.upper()
@@ -289,17 +290,18 @@ def extract(path, fournisseur: str | None = None) -> "pd.DataFrame":  # noqa: F8
         mapping = analyser_colonnes(entetes)
         prix_candidats = mapping.pop("_prix", [])
 
-        # Le nom de la colonne retenue voyage avec le prix. Sans lui, on
-        # ne peut pas verifier apres coup qu'on a bien pris le prix
-        # remise et non le tarif public : on ne peut que le supposer, et
-        # une supposition sur une colonne de prix se paie en PA faux.
+        # The name of the chosen column travels with the price. Without
+        # it there is no way to check afterwards that we really took the
+        # discounted price and not the list price: it can only be
+        # assumed, and an assumption about a price column is paid for in
+        # wrong purchase prices.
         colonne_prix = ""
         if prix_candidats:
             index = prix_candidats[0][0]
             if index < len(entetes):
                 colonne_prix = str(entetes[index]).strip()
 
-        # Sans prix ni EAN, la feuille n'apporte rien
+        # With neither price nor EAN, the sheet brings nothing
         if not prix_candidats and "ean" not in mapping:
             continue
         if "designation" not in mapping:
@@ -314,8 +316,8 @@ def extract(path, fournisseur: str | None = None) -> "pd.DataFrame":  # noqa: F8
             ref = nettoyer_texte(cellule("ref_fournisseur"))
             ean = nettoyer_ean(cellule("ean"))
 
-            # Une ligne sans libelle, ou sans aucun identifiant, est un
-            # titre de rubrique ou une ligne de mise en page.
+            # A row with no label, or with no identifier at all, is a
+            # section title or a layout row.
             if not designation or not (ref or ean):
                 continue
 
@@ -327,10 +329,10 @@ def extract(path, fournisseur: str | None = None) -> "pd.DataFrame":  # noqa: F8
             if not tarifs:
                 continue
 
-            # La colonne la mieux notee donne le prix unitaire. Les autres
-            # ne deviennent des paliers que si elles portent une quantite
-            # superieure a 1 ET un prix inferieur : sinon ce sont d'autres
-            # colonnes de prix (public, remise differente), pas des paliers.
+            # The best scoring column gives the unit price. The others
+            # only become tiers if they carry a quantity above 1 AND a
+            # lower price: otherwise they are other price columns (list
+            # price, a different discount), not tiers.
             prix_unitaire = tarifs[0][1]
             paliers = valider_paliers(prix_unitaire, tarifs[1:])
 

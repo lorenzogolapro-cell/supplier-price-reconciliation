@@ -1,21 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Chantier PA — tout ce qui attend une décision humaine, en un seul classeur.
+Purchase-price workstream: everything awaiting a human decision, in one
+workbook.
 
     python pa_a_arbitrer.py
 
-POURQUOI
-    Les questions ouvertes se sont retrouvées éparpillées dans quatre
-    fichiers, chacun produit par un outil différent. Personne ne peut
-    arbitrer en ouvrant quatre classeurs et en recoupant à la main.
+WHY
+    The open questions ended up scattered across four files, each
+    produced by a different tool. Nobody can decide by opening four
+    workbooks and cross-referencing them by hand.
 
-    Celui-ci ne calcule rien : il rassemble ce qui a déjà été produit et le
-    présente dans l'ordre où les décisions doivent être prises. La première
-    feuille se lit seule, et dit ce qu'il faut trancher.
+    This one computes nothing: it gathers what has already been produced
+    and presents it in the order in which the decisions have to be taken.
+    The first sheet reads on its own, and says what needs settling.
 
-CE QU'IL NE FAIT PAS
-    Il n'applique aucun prix et n'écrit dans aucun classeur de travail. Tant
-    qu'une question n'est pas tranchée, la réponse reste « on ne fait pas ».
+WHAT IT DOES NOT DO
+    It applies no price and writes into no working workbook. As long as a
+    question is unsettled, the answer stays "we do not act".
 """
 
 from __future__ import annotations
@@ -30,14 +31,14 @@ sys.path.insert(0, str(RACINE))
 
 SORTIE = RACINE / "sortie" / "3-achats"
 
-# Les questions de fond, celles qui ne se règlent pas ligne à ligne. Elles
-# valent plus que les listes : une seule réponse débloque des dizaines
-# d'articles d'un coup.
+# The substantive questions, the ones that are not settled row by row.
+# They are worth more than the lists: a single answer unblocks dozens of
+# items at once.
 QUESTIONS = [
     {
         "Sujet": "FOURNISSEUR O — quelle colonne ?",
-        # Valeurs d'exemple : le trio tarif / remise / prix net est reproduit
-        # dans ses proportions, pas dans ses montants reels.
+        # Example values: the list price / discount / net price trio is
+        # reproduced in its proportions, not in its real amounts.
         "Question": "Le tarif porte « Tarif de Base HT » (82,50), « Remise » "
                     "(0,1800) et « Prix HT boîte Revendeurs » (67,65). Nous "
                     "lisons la première, le responsable la troisième.",
@@ -54,7 +55,7 @@ QUESTIONS = [
         "Sujet": "FOURNISSEUR I — unitaire ou franco ?",
         "Question": "Deux colonnes : « TARIF UNITAIRE » (le prix d'une "
                     "casaque) et « FRANCO » (le prix du carton de 40).",
-        "Ce qui est établi": "1,2500 x 40 = 50,00 : les deux sont justes, ils "  # valeurs d'exemple
+        "Ce qui est établi": "1,2500 x 40 = 50,00 : les deux sont justes, ils "  # example values
                              "ne répondent pas à la même question. Sur 104 "
                              "articles, 88 collent au FRANCO et 16 au TARIF "
                              "UNITAIRE — et ces 16 portent tous « UNITE » ou "
@@ -66,9 +67,9 @@ QUESTIONS = [
     {
         "Sujet": "FOURNISSEUR I — quel fichier fait foi ?",
         "Question": "Trois tarifs 2026 coexistent. « TARIF REVENDEUR "
-                    "PRIVILEGE JUILLET 2026 » donne 5,00 pour une seringue, "  # valeurs d'exemple
+                    "PRIVILEGE JUILLET 2026 » donne 5,00 pour une seringue, "  # example values
                     "« TARIFREVENDEUR2026 » donne 5,60.",
-        "Ce qui est établi": "Le DPA actuel est 4,850, donc plus proche de "  # valeurs d'exemple
+        "Ce qui est établi": "Le DPA actuel est 4,850, donc plus proche de "  # example values
                              "5,00 (x1,03) que de 5,60 (x1,15). Aujourd'hui "
                              "c'est l'ordre alphabétique qui tranche, ce qui "
                              "n'est pas une décision.",
@@ -77,9 +78,9 @@ QUESTIONS = [
     },
     {
         "Sujet": "FOURNISSEUR D — 60 CHUT à x2,80",
-        "Question": "Soixante chaussures « UNITE » ressortent à 2,80 fois "  # valeur d'exemple
+        "Question": "Soixante chaussures « UNITE » ressortent à 2,80 fois "  # example value
                     "leur DPA.",
-        "Ce qui est établi": "2,80 vaut à peu près 2 x 1,40 : la paire ET la "  # valeurs d'exemple
+        "Ce qui est établi": "2,80 vaut à peu près 2 x 1,40 : la paire ET la "  # example values
                              "remise de 25 % connue chez ce fournisseur. Mais "
                              "il a été dit qu'il cote 1 au catalogue.",
         "Enjeu": "60 articles",
@@ -89,8 +90,8 @@ QUESTIONS = [
     {
         "Sujet": "FOURNISSEUR AZ — le peson de lève-personne",
         "Question": "La référence WMS est A151002, le tarif porte A151000 "
-                    "(« Peson pour lève personne », 880,00 EUR).",  # valeur d'exemple
-        "Ce qui est établi": "880,00 = 1100,00 x 0,80, comme toutes les lignes "  # valeurs d'exemple
+                    "(« Peson pour lève personne », 880,00 EUR).",  # example value
+        "Ce qui est établi": "880,00 = 1100,00 x 0,80, comme toutes les lignes "  # example values
                              "du tarif. Le DPA est 800,00, soit x1,10. Le "
                              "fichier « Lève personne pour le peson » "
                              "suggère un même peson décliné selon l'attache.",
@@ -101,7 +102,7 @@ QUESTIONS = [
         "Sujet": "FOURNISSEUR B — les coquilles hors XXL",
         "Question": "Le WMS a des COQUILLE MODELE M1 en T38, T44, T48 ; le "
                     "tarif ne porte qu'une ligne « MODELE M1 XXL ».",
-        "Ce qui est établi": "Le rapport x1,61 le dit : ce n'est pas le même "  # valeur d'exemple
+        "Ce qui est établi": "Le rapport x1,61 le dit : ce n'est pas le même "  # example value
                              "produit. Les tailles courantes manquent au "
                              "tarif. Idem pour le MODELE M2.",
         "Enjeu": "une dizaine d'articles",
@@ -148,7 +149,7 @@ def lire(nom_fichier: str, onglet: str, entete: int) -> pd.DataFrame:
         return pd.read_excel(chemin_lisible(chemin), sheet_name=onglet,
                              header=entete)
     except Exception as err:
-        print(f"    ! {nom_fichier} / {onglet} : {type(err).__name__} {err}")
+        print(f"    ! {nom_fichier} / {onglet}: {type(err).__name__} {err}")
         return pd.DataFrame()
 
 
@@ -166,7 +167,7 @@ def main() -> None:
             "Ce que c'est": explication,
             "Fichier d'origine": fichier,
         })
-        print(f"  {titre:<24} {len(table):>5} lignes")
+        print(f"  {titre:<24} {len(table):>5} rows")
 
     synthese = pd.DataFrame(resume)
     questions = pd.DataFrame(QUESTIONS)
@@ -180,7 +181,7 @@ def main() -> None:
         for titre, table in tables.items():
             if table.empty:
                 continue
-            # Excel limite les noms d'onglet à 31 caractères.
+            # Excel caps tab names at 31 characters.
             table.to_excel(writeur, sheet_name=titre[:31], index=False,
                            startrow=3)
 
@@ -203,8 +204,8 @@ def main() -> None:
     mise_en_forme.formater(chemin, mises)
 
     print()
-    print(f"  {len(questions)} questions de fond, "
-          f"{sum(len(t) for t in tables.values())} lignes de détail")
+    print(f"  {len(questions)} substantive questions, "
+          f"{sum(len(t) for t in tables.values())} detail rows")
     print(f"  -> {chemin}")
 
 

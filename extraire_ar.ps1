@@ -1,37 +1,39 @@
-# Extraction des accuses de reception fournisseurs depuis Outlook.
+# Extraction of the supplier order acknowledgements from Outlook.
 #
 #   powershell -ExecutionPolicy Bypass -File extraire_ar.ps1
 #   powershell -ExecutionPolicy Bypass -File extraire_ar.ps1 -MoisMax 6 -ParFournisseur 200
 #
-# Lecture seule : on lit les messages et on enregistre une copie des
-# pieces jointes. Aucun message n'est modifie, deplace ni marque lu.
+# Read only: we read the messages and save a copy of the attachments. No
+# message is modified, moved or marked as read.
 #
-# La fenetre de temps compte : un AR de 2023 ne dit rien du prix
-# d'aujourd'hui. -MoisMax borne l'extraction a l'historique utile.
+# The time window matters: an acknowledgement from 2023 says nothing
+# about today's price. -MoisMax bounds the extraction to the useful
+# history.
 #
-# Deux pieges traites ici :
-#   - chez le fournisseur B toutes les PJ portent le meme nom. Sans
-#     renommage par numero d'AR, chaque fichier ecrase le precedent.
-#   - PowerShell 5.1 lit un .ps1 sans BOM en ANSI : aucun litteral
-#     accentue dans la navigation de dossiers, sous peine de ne rien
-#     trouver. D'ou les comparaisons par motif ('te de r').
+# Two traps handled here:
+#   - at supplier B every attachment carries the same name. Without
+#     renaming by acknowledgement number, each file overwrites the
+#     previous one.
+#   - PowerShell 5.1 reads a .ps1 without a BOM as ANSI: no accented
+#     literal in the folder navigation, or nothing is ever found. Hence
+#     the pattern comparisons ('te de r').
 
 param(
     [int]$MoisMax = 18,
     [int]$ParFournisseur = 500,
     [string]$Destination = "$PSScriptRoot\ar_pdf",
-    # Limite la passe a un seul fournisseur (motif sur le nom de dossier).
-    # Sans cela, ajouter une regle oblige a re-extraire les sept autres.
+    # Limits the pass to a single supplier (pattern on the folder name).
+    # Without it, adding one rule means re-extracting the seven others.
     [string]$Fournisseur = ''
 )
 
-# Un motif par fournisseur. Sujet et PJ servent a ecarter ce qui n'est
-# pas un AR : avis d'expedition, bons de livraison, echanges de mails.
-# Le champ Expediteur est le garde-fou principal : la plupart de ces
-# dossiers contiennent AUSSI nos propres bons de commande, envoyes par
-# notre Exchange interne (/O=EXCHANGELABS/...). Ceux-la portent NOS prix
-# tires du WMS - les lire n'apprendrait rien. Seul le courrier venu du
-# fournisseur porte le prix qu'il s'engage a facturer.
+# One pattern per supplier. Subject and attachment serve to rule out what
+# is not an acknowledgement: shipping notices, delivery notes, mail
+# threads. The Expediteur field is the main safeguard: most of these
+# folders ALSO hold our own purchase orders, sent by our internal
+# Exchange (/O=EXCHANGELABS/...). Those carry OUR prices taken from the
+# WMS - reading them would teach us nothing. Only mail coming from the
+# supplier carries the price it commits to invoicing.
 $Regles = @(
     @{ Dossier = 'FournisseurB'
        Expediteur = 'fournisseur-b\.example'
@@ -51,16 +53,16 @@ $Regles = @(
        PJ      = '^FOURNISSEUR_L_Commande_.*\.pdf$'
        NumAR   = 'n.(\d+)'
        NumCde  = 'r.f.rence\s+(\d+)' }
-    # Accuse tres propre, mais sans code reference : le rapprochement
-    # devra passer par le libelle et la taille.
+    # Very clean acknowledgement, but with no reference code: the
+    # matching will have to go through the label and the size.
     @{ Dossier = 'FournisseurG'
        Expediteur = 'fournisseur-cb\.example|fournisseur-g'
        Sujet   = '.'
        PJ      = '^AR_CMD_.*\.pdf$'
        NumAR   = 'Commande\s+(\d+)'
        NumCde  = $null }
-    # Porte le prix BRUT, la remise de convention et le prix NET -
-    # les trois, ce qu'aucun tarif ne donne.
+    # Carries the GROSS price, the contractual discount and the NET price
+    # - all three, which no price list gives.
     @{ Dossier = 'FournisseurN'
        Expediteur = 'fournisseur-n\.example'
        Sujet   = '.'
@@ -79,16 +81,17 @@ $Regles = @(
        PJ      = '^Bon_Commande_.*\.pdf$'
        NumAR   = 'N°?\s*(C\d+)'
        NumCde  = $null }
-    # Fournisseur A, ajoute le 21/09. Le dossier Outlook porte un accent
-    # dans son nom : d'ou MotifDossier, parce qu'un litteral accentue ne
-    # se compare pas dans un .ps1 sans BOM.
+    # Supplier A, added on 21/09. The Outlook folder name carries an
+    # accent: hence MotifDossier, because an accented literal cannot be
+    # compared in a .ps1 without a BOM.
     #
-    # Le tri est net dans ce dossier de 690 messages :
-    #   AR du fournisseur -> adresse de service du fournisseur,
-    #                        sujet "1CDE...", piece jointe "1CDE....pdf"
-    #   nos commandes     -> Exchange interne, sujet "Commande CMD-EXEMPLE-1"
-    # Le motif de PJ suffit donc a ecarter nos propres bons de commande et
-    # les fils de discussion (qui ne portent que des images de signature).
+    # The sorting is clear in this 690-message folder:
+    #   supplier AR  -> supplier service address,
+    #                   subject "1CDE...", attachment "1CDE....pdf"
+    #   our orders   -> internal Exchange, subject "Commande CMD-EXEMPLE-1"
+    # The attachment pattern is therefore enough to rule out our own
+    # purchase orders and the mail threads (which carry nothing but
+    # signature images).
     @{ Dossier = 'FournisseurA'
        MotifDossier = '^FournisseurA'
        Expediteur = 'fournisseur-a\.example'
@@ -96,21 +99,21 @@ $Regles = @(
        PJ      = '^1CDE\d+\.pdf$'
        NumAR   = '(1CDE\d+)'
        NumCde  = $null }
-    # Fournisseur D, ajoute le 21/09.
+    # Supplier D, added on 21/09.
     #
-    # Le dossier melange DEUX courriers automatiques du meme domaine :
-    #   commandes@   -> l'AR, avec les prix   <- ce qu'on veut
-    #   expeditions@ -> l'avis d'expedition, sans prix
-    # D'ou un filtre sur l'adresse complete et pas sur le domaine.
+    # The folder mixes TWO automatic mails from the same domain:
+    #   commandes@   -> the acknowledgement, with prices  <- what we want
+    #   expeditions@ -> the shipping notice, with none
+    # Hence a filter on the full address and not on the domain.
     #
-    # PIEGE : la piece jointe s'appelle TOUJOURS
-    # "Order_Acknowledgement.pdf". Sans renommage par numero d'AR,
-    # chaque fichier ecrase le precedent - exactement le cas du
-    # fournisseur B documente plus haut. Le NumAR tire du sujet est donc
-    # obligatoire.
+    # TRAP: the attachment is ALWAYS called
+    # "Order_Acknowledgement.pdf". Without renaming by acknowledgement
+    # number, each file overwrites the previous one - exactly the
+    # supplier B case documented above. The NumAR taken from the subject
+    # is therefore mandatory.
     #
-    # Les accents du sujet sont remplaces par des points : un litteral
-    # accentue dans un .ps1 sans BOM ne matche rien (voir l'en-tete).
+    # The accents of the subject are replaced by dots: an accented
+    # literal in a .ps1 without a BOM matches nothing (see the header).
     @{ Dossier = 'FournisseurD'
        MotifDossier = '^FournisseurD'
        Expediteur = 'commandes@fournisseur-d\.example'
@@ -118,11 +121,11 @@ $Regles = @(
        PJ      = '^Order_Acknowledgement\.pdf$'
        NumAR   = 'num.ro\s+(\d+)'
        NumCde  = $null }
-    # Fournisseur E, ajoute le 21/09.
+    # Supplier E, added on 21/09.
     #
-    # commandes@fournisseur-e.example envoie AUSSI nos propres bons de
-    # commande en transfert ("TR: commande CMD-EXEMPLE-2") : c'est la
-    # piece jointe qui departage, celle de l'AR se terminant par
+    # commandes@fournisseur-e.example ALSO forwards our own purchase
+    # orders ("TR: commande CMD-EXEMPLE-2"): the attachment is what
+    # tells them apart, the acknowledgement's one ending with
     # "Fournisseur E.pdf".
     @{ Dossier = 'FournisseurE'
        MotifDossier = '^FournisseurE'
@@ -135,11 +138,11 @@ $Regles = @(
 
 if ($Fournisseur) {
     $Regles = @($Regles | Where-Object { $_.Dossier -match $Fournisseur })
-    Write-Output "limite au fournisseur : $Fournisseur ($($Regles.Count) regle(s))"
+    Write-Output "limited to supplier: $Fournisseur ($($Regles.Count) rule(s))"
 }
 
 $Limite = (Get-Date).AddMonths(-$MoisMax)
-Write-Output "AR recus depuis le $($Limite.ToString('dd/MM/yyyy'))"
+Write-Output "acknowledgements received since $($Limite.ToString('dd/MM/yyyy'))"
 
 try {
     $ol = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
@@ -150,15 +153,15 @@ $ns = $ol.GetNamespace('MAPI')
 
 $store = $null
 foreach ($s in $ns.Folders) { if ($s.Name -like 'Achats*') { $store = $s; break } }
-if (-not $store) { throw "Boite partagee 'Achats' introuvable" }
+if (-not $store) { throw "Shared mailbox 'Achats' not found" }
 
 $inbox = $null
 foreach ($f in $store.Folders) { if ($f.Name -match 'te de r') { $inbox = $f; break } }
-if (-not $inbox) { throw "Boite de reception introuvable" }
+if (-not $inbox) { throw "Inbox not found" }
 
 $racine = $null
 foreach ($f in $inbox.Folders) { if ($f.Name -eq 'FOURNISSEURS') { $racine = $f; break } }
-if (-not $racine) { throw "Dossier FOURNISSEURS introuvable" }
+if (-not $racine) { throw "FOURNISSEURS folder not found" }
 
 $index = @()
 
@@ -173,7 +176,7 @@ foreach ($regle in $Regles) {
         if ($motif) { if ($f.Name -match $motif) { $cible = $f; break } }
         elseif ($f.Name -eq $nom) { $cible = $f; break }
     }
-    if (-not $cible) { Write-Output "$nom : dossier absent"; continue }
+    if (-not $cible) { Write-Output "$nom : folder not found"; continue }
 
     $items = $cible.Items
     $items.Sort('[ReceivedTime]', $true)
@@ -182,11 +185,11 @@ foreach ($regle in $Regles) {
     for ($i = 1; $i -le $items.Count -and $pris -lt $ParFournisseur; $i++) {
         $m = $items.Item($i)
         if ($m.Class -ne 43) { continue }
-        # Trie par date decroissante : passe la limite, tout le reste
-        # est plus ancien encore.
+        # Sorted by descending date: past the limit, everything else is
+        # older still.
         if ($m.ReceivedTime -lt $Limite) { break }
         if ($m.Subject -notmatch $regle.Sujet) { continue }
-        # Ecarte nos propres bons de commande, envoyes par notre Exchange
+        # Rules out our own purchase orders, sent by our own Exchange
         if ($regle.Expediteur) {
             $de = "$($m.SenderEmailAddress) $($m.SenderName)"
             if ($de -notmatch $regle.Expediteur) { continue }
@@ -221,16 +224,15 @@ foreach ($regle in $Regles) {
         }
         if ($garde) { $pris++ }
     }
-    Write-Output "$nom : $pris AR extraits"
+    Write-Output "$nom : $pris acknowledgements extracted"
 }
 
-# L'index se COMPLETE, il ne s'ecrase pas.
+# The index is APPENDED to, it is never overwritten.
 #
-# Avec -Fournisseur, la passe ne voit qu'un seul dossier : ecrire l'index
-# tel quel effacerait les lignes des autres fournisseurs extraits avant.
-# On relit donc l'existant, on retire les lignes du ou des fournisseurs
-# qu'on vient de refaire (elles sont remplacees, pas dupliquees), et on
-# rassemble.
+# With -Fournisseur, the pass only sees one folder: writing the index as
+# it stands would erase the rows of the other suppliers extracted before.
+# So we re-read what exists, drop the rows of the supplier(s) we have
+# just redone (they are replaced, not duplicated), and merge.
 $csv = Join-Path $Destination 'index_ar.csv'
 $refaits = @($Regles | ForEach-Object { $_.Dossier })
 $garde = @()
@@ -238,10 +240,10 @@ if (Test-Path $csv) {
     $ancien = @(Import-Csv -Path $csv)
     $garde = @($ancien | Where-Object { $refaits -notcontains $_.Fournisseur })
     Write-Output ""
-    Write-Output "index existant : $($ancien.Count) lignes, dont $($garde.Count) conservees"
+    Write-Output "existing index: $($ancien.Count) rows, of which $($garde.Count) kept"
 }
 $tout = @($garde) + @($index)
 $tout | Export-Csv -Path $csv -NoTypeInformation -Encoding UTF8
 Write-Output ""
-Write-Output "$($index.Count) pieces jointes extraites -> $Destination"
-Write-Output "index : $($tout.Count) lignes au total"
+Write-Output "$($index.Count) attachments extracted -> $Destination"
+Write-Output "index: $($tout.Count) rows in total"

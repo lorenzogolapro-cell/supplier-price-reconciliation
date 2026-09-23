@@ -1,36 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-Fige le perimetre en LISTE, une fois pour toutes.
+Freezes the scope into a LIST, once and for all.
 
-    python figer_perimetre.py            écrit la liste si elle n'existe pas
-    python figer_perimetre.py --refaire  la réécrit (à n'utiliser que sur
-                                         décision explicite)
+    python figer_perimetre.py            writes the list if it does not
+                                         exist yet
+    python figer_perimetre.py --refaire  rewrites it (to be used only on
+                                         an explicit decision)
 
-Sortie : perimetre/perimetre_v1_1.csv
-         perimetre/perimetre_v1_1.json   (manifeste)
+Output: perimetre/perimetre_v1_1.csv
+        perimetre/perimetre_v1_1.json   (manifest)
 
-Pourquoi une liste et pas un recalcul
---------------------------------------
-Jusqu'ici chaque script recalculait le perimetre depuis les extraits.
-Trois problemes, et le troisieme est le pire :
+Why a list and not a recompute
+------------------------------
+Until now every script recomputed the scope from the extracts. Three
+problems, and the third one is the worst:
 
-  1. c'est lent — 23 698 articles et 23 684 lignes de commande relues a
-     chaque fois ;
-  2. ca dépend de fichiers qui bougent — un nouvel export du WMS ou une
-     ligne de commande de plus, et le perimetre change ;
-  3. DEUX SESSIONS TRAVAILLENT EN PARALLELE sur ce perimetre. Si chacune
-     le recalcule, rien ne garantit qu'elles parlent des memes articles.
-     Un perimetre « figé » qui se recalcule n'est pas figé.
+  1. it is slow: 23,698 items and 23,684 order lines re-read every
+     single time;
+  2. it depends on files that move: one new WMS export or one extra
+     order line, and the scope changes;
+  3. TWO SESSIONS WORK IN PARALLEL on this scope. If each one
+     recomputes it, nothing guarantees they are talking about the same
+     items. A "frozen" scope that gets recomputed is not frozen.
 
-La liste est donc écrite une fois, avec l'empreinte des fichiers qui
-l'ont produite. Toute session la LIT, aucune ne la recalcule.
+So the list is written once, with the fingerprint of the files that
+produced it. Every session READS it, none recomputes it.
 
-Le garde-fou
-------------
-`VOLUME_ATTENDU` vaut 5 082 (v1.2 ; 4 731 etait v1.1, avant l'entree des
-351 references du catalogue pro). Si le calcul rend autre chose, le script
-s'arrete au lieu d'ecrire : c'est le signe qu'une source a bouge, et
-cela demande une decision, pas un ecrasement silencieux.
+The guardrail
+-------------
+`VOLUME_ATTENDU` is 5,082 (v1.2; 4,731 was v1.1, before the 351 pro
+catalogue references came in). If the computation returns anything
+else, the script stops instead of writing: it is the sign that a source
+has moved, and that calls for a decision, not a silent overwrite.
 """
 
 from __future__ import annotations
@@ -73,7 +74,7 @@ COLONNES = [
 
 
 def empreinte(chemin: Path) -> dict:
-    """Somme de controle d'une source, pour que la liste soit tracable."""
+    """Checksum of a source, so the list stays traceable."""
     condense = hashlib.sha256()
     with chemin.open("rb") as flux:
         for bloc in iter(lambda: flux.read(1 << 20), b""):
@@ -88,7 +89,7 @@ def empreinte(chemin: Path) -> dict:
 
 
 def calculer() -> tuple[pd.DataFrame, dict]:
-    """Le perimetre, calcule une derniere fois avant d'etre fige."""
+    """The scope, computed one last time before being frozen."""
     from achats_par_article import (COMMANDES, chemin_lisible,
                                     construire_table)
     from perimetre_completude import charger_sortie
@@ -103,24 +104,24 @@ def calculer() -> tuple[pd.DataFrame, dict]:
     per["VENTE_12M"] = per["TOURNE"].astype(bool)
     per["_ka"] = per["Code article"].map(normaliser_reference)
 
-    # Troisieme porte : le catalogue pro. On lit la liste figee du
-    # catalogue, jamais le fichier source — les deux chantiers doivent
-    # voir la meme population. Seul l'ENSEMBLE des references nous
-    # interesse ici, pas sa colonne « au perimetre », qui elle depend
-    # de la version du perimetre et serait circulaire.
+    # Third door: the pro catalogue. We read the frozen catalogue list,
+    # never the source file: both workstreams have to see the same
+    # population. Only the SET of references matters here, not its
+    # "inside the scope" column, which depends on the scope version and
+    # would be circular.
     per["CATALOGUE_PRO"] = False
     if CATALOGUE_PRO_VAUT_ENTREE:
         if not CATALOGUE_PRO.exists():
             raise SystemExit(
-                f"Liste du catalogue pro absente : {CATALOGUE_PRO}\n"
-                f"La produire d'abord :  python figer_catalogue_pro.py")
+                f"Pro catalogue list missing: {CATALOGUE_PRO}\n"
+                f"Produce it first:  python figer_catalogue_pro.py")
         cat = pd.read_csv(CATALOGUE_PRO, dtype=str)
         refs = {normaliser_reference(v) for v in cat["Code article"]}
         per["CATALOGUE_PRO"] = per["_ka"].isin(refs - {None}).astype(bool)
 
     activite = per["VENTE_12M"] | per["ACHAT_12M"] | per["CATALOGUE_PRO"]
-    # Les motifs d'ecartement passent TOUJOURS en premier : le catalogue
-    # pro ouvre une porte, il ne leve pas un ecartement.
+    # The exclusion reasons ALWAYS come first: the pro catalogue opens a
+    # door, it does not lift an exclusion.
     dedans = per[per["au_perimetre"] & activite].copy()
 
     def porte(v: bool, a: bool, c: bool) -> str:
@@ -163,28 +164,28 @@ def main() -> None:
     if LISTE.exists() and not refaire:
         deja = pd.read_csv(LISTE, dtype=str)
         print(resume())
-        print(f"\nLa liste existe déjà : {LISTE.name}")
-        print(f"  {len(deja)} articles")
-        print(f"  modifiée le "
+        print(f"\nThe list already exists: {LISTE.name}")
+        print(f"  {len(deja)} items")
+        print(f"  last modified on "
               f"{datetime.fromtimestamp(LISTE.stat().st_mtime):%d/%m/%Y %H:%M}")
-        print("\nElle n'est PAS recalculée : c'est tout l'intérêt.")
-        print("Pour la refaire malgré tout : python figer_perimetre.py --refaire")
+        print("\nIt is NOT recomputed: that is the whole point.")
+        print("To rebuild it anyway: python figer_perimetre.py --refaire")
         return
 
     print(resume())
-    print("\nCalcul du périmètre, une dernière fois avant de le figer...\n")
+    print("\nComputing the scope, one last time before freezing it...\n")
     liste, meta = calculer()
 
-    print(f"  articles calculés .......... {len(liste)}")
-    print(f"  volume attendu ............. {VOLUME_ATTENDU}")
+    print(f"  items computed ............. {len(liste)}")
+    print(f"  expected volume ............ {VOLUME_ATTENDU}")
     if len(liste) != VOLUME_ATTENDU:
-        print(f"\n  ARRÊT — écart de {len(liste) - VOLUME_ATTENDU:+d} article(s).")
-        print("  Une source a bougé. Rien n'est écrit : c'est une décision")
-        print("  à prendre, pas un écrasement à faire en silence.")
+        print(f"\n  STOP - gap of {len(liste) - VOLUME_ATTENDU:+d} item(s).")
+        print("  A source has moved. Nothing is written: this is a decision")
+        print("  to take, not an overwrite to do quietly.")
         for s in meta["sources"]:
             print(f"      {s['fichier']:<40}{s['modifié']}  {s['sha256']}")
         raise SystemExit(1)
-    print("  OK — le volume correspond.\n")
+    print("  OK - the volume matches.\n")
 
     for v, n in liste["PORTE"].value_counts().items():
         print(f"      {n:>6}  {v}")
@@ -208,8 +209,8 @@ def main() -> None:
 
     print(f"\n  -> {LISTE}")
     print(f"  -> {MANIFESTE}")
-    print("\nÀ partir de maintenant : les sessions LISENT cette liste.")
-    print("Voir perimetre_liste.py pour la charger en une ligne.")
+    print("\nFrom now on: sessions READ this list.")
+    print("See perimetre_liste.py to load it in one line.")
 
 
 if __name__ == "__main__":

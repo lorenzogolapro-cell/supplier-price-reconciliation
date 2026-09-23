@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Controles qualite sur le catalogue consolide.
+Quality checks on the consolidated catalogue.
 
-Produit trois choses :
-  - une synthese lisible (indicateur / valeur / pourcentage)
-  - une table unique d'anomalies typees, triee par gravite
-  - le detail par categorie, pour le rapport complet
+Produces three things:
+  - a readable summary (indicator / value / percentage)
+  - a single table of typed anomalies, sorted by severity
+  - the detail per category, for the full report
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ import pandas as pd
 
 from extracteurs.base import anomalies_paliers, diagnostic_ean, ean_est_valide
 
-# Gravite des anomalies : plus le chiffre est bas, plus c'est urgent.
-# Un prix nul empeche toute commande, un doublon d'EAN fausse les
-# identifications produit : ce sont les deux cas bloquants.
+# Anomaly severity: the lower the number, the more urgent it is.
+# A zero price makes ordering impossible, a duplicate EAN corrupts
+# product identification: these are the two blocking cases.
 GRAVITE = {
     "Prix d'achat nul ou negatif": 1,
     "Doublon EAN (produits differents)": 2,
@@ -46,19 +46,19 @@ def _ean_presents(df: pd.DataFrame) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
-# Table unique des anomalies
+# Single table of anomalies
 # ---------------------------------------------------------------------------
 
 def construire_anomalies(df: pd.DataFrame) -> pd.DataFrame:
-    """Une ligne par anomalie constatee, avec son type en clair.
+    """One row per anomaly found, with its type spelled out.
 
-    Un meme produit peut apparaitre plusieurs fois s'il cumule plusieurs
-    problemes : c'est voulu, chaque ligne correspond a une action a mener.
+    The same product can appear several times if it carries several
+    problems: that is intended, each row is one action to take.
     """
     lignes = []
 
     def ajouter(masque: pd.Series, type_anomalie: str, detail=None):
-        """Empile les lignes correspondant a un masque booleen."""
+        """Stacks the rows matching a boolean mask."""
         if not masque.any():
             return
         extrait = df.loc[masque].copy()
@@ -68,18 +68,18 @@ def construire_anomalies(df: pd.DataFrame) -> pd.DataFrame:
         elif isinstance(detail, str):
             extrait["detail"] = detail
         else:
-            extrait["detail"] = detail  # Series alignee sur l'index
+            extrait["detail"] = detail  # Series aligned on the index
         lignes.append(extrait)
 
     presents = _ean_presents(df)
 
-    # --- prix -------------------------------------------------------------
+    # --- price ------------------------------------------------------------
     prix = df["prix_achat_unitaire_ht"]
     ajouter(prix.isna(), "Prix d'achat nul ou negatif", "prix absent du tarif")
     ajouter(prix.notna() & (prix <= 0), "Prix d'achat nul ou negatif",
             "prix inferieur ou egal a zero")
 
-    incoherent = df["prix_coherent"] == False  # noqa: E712 (None doit rester exclu)
+    incoherent = df["prix_coherent"] == False  # noqa: E712 (None must stay out)
     if incoherent.any():
         detail = df.loc[incoherent].apply(
             lambda r: f"recalcule {r['prix_recalcule']:.2f} € "
@@ -89,7 +89,7 @@ def construire_anomalies(df: pd.DataFrame) -> pd.DataFrame:
         )
         ajouter(incoherent, "Prix incoherent", detail)
 
-    # --- paliers ----------------------------------------------------------
+    # --- price breaks -----------------------------------------------------
     def controler(ligne):
         return anomalies_paliers(
             ligne["prix_achat_unitaire_ht"],
@@ -103,7 +103,7 @@ def construire_anomalies(df: pd.DataFrame) -> pd.DataFrame:
         ajouter(masque_palier, "Palier aberrant",
                 problemes.loc[masque_palier].map(" ; ".join))
 
-    # --- conditionnement --------------------------------------------------
+    # --- pack size --------------------------------------------------------
     ajouter(df["conditionnement_suppose"] == True,  # noqa: E712
             "Conditionnement suppose", "absent du tarif, ramene a 1")
 
@@ -116,7 +116,7 @@ def construire_anomalies(df: pd.DataFrame) -> pd.DataFrame:
     if invalides.any():
         ajouter(invalides, "EAN invalide", df.loc[invalides, "ean"].map(diagnostic_ean))
 
-    # --- doublons ---------------------------------------------------------
+    # --- duplicates -------------------------------------------------------
     refs = df["ref_fournisseur"].duplicated(keep=False)
     if refs.any():
         groupes = df.loc[refs].groupby("ref_fournisseur")
@@ -157,11 +157,11 @@ def construire_anomalies(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Synthese
+# Summary
 # ---------------------------------------------------------------------------
 
 def calculer_stats(df: pd.DataFrame) -> pd.DataFrame:
-    """Synthese qualite en tableau lisible : indicateur / valeur / %."""
+    """Quality summary as a readable table: indicator / value / %."""
     total = len(df)
     presents = _ean_presents(df)
     prix = df["prix_achat_unitaire_ht"]
@@ -212,7 +212,7 @@ def calculer_stats(df: pd.DataFrame) -> pd.DataFrame:
         for nom, valeur in indicateurs
     ]
 
-    # Repartition des taux de TVA rencontres
+    # Breakdown of the VAT rates encountered
     for taux, nombre in df["tva_taux"].value_counts(dropna=False).items():
         libelle = "non renseigne" if pd.isna(taux) else f"{taux:.1%}"
         lignes.append(
@@ -227,11 +227,11 @@ def calculer_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Detail par categorie, pour le rapport complet
+# Detail per category, for the full report
 # ---------------------------------------------------------------------------
 
 def detail_anomalies(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    """Detail ligne a ligne, un onglet par famille d'anomalie."""
+    """Row-by-row detail, one tab per family of anomaly."""
     colonnes = [
         "fournisseur", "ref_fournisseur", "designation", "ean",
         "prix_achat_unitaire_ht", "conditionnement", "fichier_source",

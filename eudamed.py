@@ -1,28 +1,28 @@
 # -*- coding: utf-8 -*-
 """
-Interrogation d'EUDAMED, la base europeenne des dispositifs medicaux.
+Queries EUDAMED, the European medical device database.
 
-Tout fabricant de DM mis sur le marche europeen doit y declarer ses
-dispositifs avec leur UDI-DI. Or un UDI-DI EST un GTIN : c'est donc une
-source publique de codes EAN, y compris pour des fournisseurs qui n'en
-publient aucun dans leurs tarifs.
+Every manufacturer placing a medical device on the European market has
+to declare it there with its UDI-DI. And a UDI-DI IS a GTIN: this is
+therefore a public source of EAN codes, including for suppliers that
+publish none in their price lists.
 
-    EAN-13 = primaryDi (GTIN-14) prive de son zero de tete
+    EAN-13 = primaryDi (GTIN-14) stripped of its leading zero
 
-L'API est publique et sans authentification, mais capricieuse :
+The API is public and needs no authentication, but it is temperamental:
 
-  - le filtre "srn" (numero d'enregistrement du fabricant) fonctionne et
-    renvoie l'integralite de son catalogue ;
-  - le filtre "tradeName" fonctionne aussi, en recherche partielle et
-    insensible a la casse ;
-  - TOUS LES AUTRES sont ignores en silence — "manufacturerName",
-    "keyword", "query"... L'API repond alors 200 avec les 3,3 millions de
-    dispositifs de la base. Un total superieur a 100 000 signale donc un
-    filtre non pris en compte, pas un resultat.
+  - the "srn" filter (manufacturer registration number) works and
+    returns that manufacturer's entire catalogue;
+  - the "tradeName" filter works too, as a partial, case-insensitive
+    search;
+  - ALL THE OTHERS are silently ignored: "manufacturerName", "keyword",
+    "query"... The API then answers 200 with the 3.3 million devices of
+    the whole database. A total above 100 000 therefore signals a filter
+    that was not taken into account, not a result.
 
-Il n'existe pas d'endpoint public de recherche d'acteurs : le SRN d'un
-fabricant se decouvre soit par un de ses produits (via tradeName), soit
-dans ses certificats CE.
+There is no public endpoint to search for actors: a manufacturer's SRN
+is discovered either through one of its products (via tradeName), or in
+its CE certificates.
 """
 
 from __future__ import annotations
@@ -41,32 +41,33 @@ ENTETES = {
     "User-Agent": "catalogue-distributeur/1.0 (mise a jour base articles)",
 }
 
-# Au-dela, le filtre demande a ete ignore et l'API renvoie toute la base
+# Above this, the requested filter was ignored and the API returns the
+# whole database
 SEUIL_FILTRE_IGNORE = 100_000
 
-# Politesse envers un service public : une pause entre deux appels
+# Politeness towards a public service: a pause between two calls
 PAUSE = 0.4
 TAILLE_PAGE = 100
 
-# SRN connus, pour eviter une decouverte a chaque execution.
-# Le SRN se lit aussi dans les certificats CE publies par le fabricant.
-# SRN verifies un a un : on interroge EUDAMED par nom commercial d'un
-# produit connu, puis on lit la raison sociale du fabricant qui repond. La
-# recherche par raison sociale, elle, ne renvoie rien — c'est une limite de
-# l'API, pas une absence de declaration.
+# Known SRNs, to avoid a discovery pass on every run.
+# The SRN can also be read in the CE certificates published by the
+# manufacturer.
+# SRNs verified one by one: we query EUDAMED by the trade name of a known
+# product, then read the company name of the manufacturer that answers.
+# Searching by company name, on the other hand, returns nothing: that is
+# a limit of the API, not a missing declaration.
 #
-# Les fournisseurs P, L et AM n'y figurent pas : les recherches ne
-# remontent que des homonymes (fournisseurs GC, CJ et GD). Inutile de
-# reessayer.
+# Suppliers P, L and AM are not listed here: the searches only bring back
+# homonyms (suppliers GC, CJ and GD). No point retrying.
 SRN_CONNUS = {
     "FOURNISSEUR B": "BE-MF-000000001",
-    "FOURNISSEUR H": "FR-MF-000000002",   # raison sociale du fournisseur H
-    "FOURNISSEUR Q": "FR-MF-000000003",   # raison sociale du fournisseur Q
-    "FOURNISSEUR AB": "FR-MF-000000004",  # (et non le SRN "-PR-",
-                                          # qui designe un distributeur)
+    "FOURNISSEUR H": "FR-MF-000000002",   # supplier H's company name
+    "FOURNISSEUR Q": "FR-MF-000000003",   # supplier Q's company name
+    "FOURNISSEUR AB": "FR-MF-000000004",  # (and not the "-PR-" SRN,
+                                          # which is a distributor)
     "FOURNISSEUR CD": "DE-MF-000000005",
     "FOURNISSEUR BF": "FR-MF-000000006",
-    "FOURNISSEUR GE": "FR-MF-000000006",  # rachete par le fournisseur BF
+    "FOURNISSEUR GE": "FR-MF-000000006",  # acquired by supplier BF
     "FOURNISSEUR E": "DE-MF-000000007",
 }
 
@@ -82,12 +83,11 @@ def _normaliser(texte) -> str:
 
 
 def ean_depuis_gtin(primary_di) -> str | None:
-    """Convertit un UDI-DI (GTIN-14) en EAN-13.
+    """Converts a UDI-DI (GTIN-14) into an EAN-13.
 
-    Un GTIN-14 dont l'indicateur de conditionnement vaut 0 designe l'unite
-    de vente : son EAN-13 s'obtient en retirant ce zero. Un indicateur non
-    nul designe un colis, dont le code ne doit pas etre pris pour celui de
-    l'unite.
+    A GTIN-14 whose packaging indicator is 0 designates the sales unit:
+    its EAN-13 is obtained by removing that zero. A non-zero indicator
+    designates a pack, whose code must not be taken for the unit's.
     """
     if primary_di is None:
         return None
@@ -100,7 +100,7 @@ def ean_depuis_gtin(primary_di) -> str | None:
 
 
 def _appeler(params: dict) -> tuple[int, list]:
-    """Un appel a l'API. Renvoie (total, elements)."""
+    """One call to the API. Returns (total, items)."""
     reponse = requests.get(URL, params=params, headers=ENTETES, timeout=60)
     if "json" not in reponse.headers.get("content-type", ""):
         return 0, []
@@ -110,14 +110,14 @@ def _appeler(params: dict) -> tuple[int, list]:
 
 def chercher(srn: str | None = None, trade_name: str | None = None,
              maximum: int = 1000) -> list[dict]:
-    """Dispositifs correspondant a un SRN ou a un nom commercial.
+    """Devices matching an SRN or a trade name.
 
-    Le total est verifie : s'il depasse SEUIL_FILTRE_IGNORE, c'est que
-    l'API a ignore le filtre et renvoie toute la base. On preferera ne
-    rien rendre plutot que n'importe quoi.
+    The total is checked: if it exceeds SEUIL_FILTRE_IGNORE, the API
+    ignored the filter and is returning the whole database. We would
+    rather return nothing than return anything at all.
     """
     if not srn and not trade_name:
-        raise ValueError("Il faut un SRN ou un nom commercial")
+        raise ValueError("An SRN or a trade name is required")
 
     base = {"languageIso2Code": "en", "size": TAILLE_PAGE,
             "pageSize": TAILLE_PAGE}
@@ -128,7 +128,7 @@ def chercher(srn: str | None = None, trade_name: str | None = None,
 
     total, premiers = _appeler({**base, "page": 0})
     if total > SEUIL_FILTRE_IGNORE:
-        # Filtre ignore : la reponse ne veut rien dire
+        # Filter ignored: the answer means nothing
         return []
 
     resultats = list(premiers)
@@ -144,7 +144,7 @@ def chercher(srn: str | None = None, trade_name: str | None = None,
     return resultats[:maximum]
 
 
-# Mots trop generiques pour identifier une societe a eux seuls
+# Words too generic to identify a company on their own
 MOTS_SOCIETE = {
     "GROUP", "GROUPE", "FRANCE", "SAS", "SARL", "SA", "GMBH", "AG", "BV",
     "NV", "LTD", "INC", "LP", "CO", "MEDICAL", "MEDIZIN", "SANTE", "HEALTH",
@@ -153,7 +153,7 @@ MOTS_SOCIETE = {
 
 
 def _mots_societe(nom) -> set:
-    """Mots significatifs d'une raison sociale."""
+    """Meaningful words of a company name."""
     if not nom:
         return set()
     texte = unicodedata.normalize("NFKD", str(nom).upper())
@@ -166,12 +166,11 @@ def _mots_societe(nom) -> set:
 
 
 def _meme_societe(attendu, trouve) -> bool:
-    """Le fabricant trouve est-il bien celui qu'on cherchait ?
+    """Is the manufacturer found really the one we were looking for?
 
-    La comparaison porte sur des MOTS ENTIERS. Une simple inclusion de
-    chaine ferait passer "ALPHA" pour "Alphamed Innovation", ou "BETA"
-    pour "Betamedical" : on injecterait alors les codes d'un autre
-    fabricant.
+    The comparison is made on WHOLE WORDS. A plain substring test would
+    let "ALPHA" pass for "Alphamed Innovation", or "BETA" for
+    "Betamedical": we would then inject another manufacturer's codes.
     """
     mots_attendus = _mots_societe(attendu)
     mots_trouves = _mots_societe(trouve)
@@ -182,12 +181,12 @@ def _meme_societe(attendu, trouve) -> bool:
 
 def trouver_srn(indices: list[str], fabricant: str | None = None
                 ) -> tuple[str | None, str | None]:
-    """Decouvre le SRN d'un fabricant a partir de noms de ses produits.
+    """Discovers a manufacturer's SRN from the names of its products.
 
-    `indices` sont des noms de modeles connus ("M200N", "Modele-D"). Le
-    premier qui ramene un dispositif du bon fabricant livre son SRN.
+    `indices` are known model names ("M200N", "Modele-D"). The first one
+    that brings back a device from the right manufacturer yields its SRN.
 
-    Renvoie (srn, nom du fabricant tel qu'EUDAMED l'ecrit).
+    Returns (srn, manufacturer name as EUDAMED spells it).
     """
 
     for indice in indices:
@@ -206,8 +205,8 @@ def trouver_srn(indices: list[str], fabricant: str | None = None
                 continue
             if fabricant is None:
                 return srn, nom
-            # "Alpha Group" doit repondre a "ALPHA", mais "Alphamed
-            # Innovation" ne doit pas repondre a "ALPHA".
+            # "Alpha Group" must answer to "ALPHA", but "Alphamed
+            # Innovation" must not answer to "ALPHA".
             if _meme_societe(fabricant, nom):
                 return srn, nom
 
@@ -216,11 +215,11 @@ def trouver_srn(indices: list[str], fabricant: str | None = None
 
 def catalogue_fabricant(fournisseur: str, indices: list[str] | None = None,
                         utiliser_cache: bool = True) -> list[dict]:
-    """Tous les dispositifs declares par un fabricant.
+    """Every device declared by one manufacturer.
 
-    Le SRN est cherche dans SRN_CONNUS, puis decouvert a partir des noms
-    de produits fournis. Le resultat est mis en cache : la base bouge peu
-    et l'API est lente.
+    The SRN is looked up in SRN_CONNUS, then discovered from the product
+    names supplied. The result is cached: the database moves little and
+    the API is slow.
     """
     cle = _normaliser(fournisseur)
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -233,12 +232,12 @@ def catalogue_fabricant(fournisseur: str, indices: list[str] | None = None,
     if srn is None and indices:
         srn, nom = trouver_srn(indices, fabricant=fournisseur)
         if srn:
-            print(f"    SRN découvert pour {fournisseur} : {srn} ({nom})")
+            print(f"    SRN discovered for {fournisseur}: {srn} ({nom})")
 
     if not srn:
-        # L'echec est mis en cache lui aussi : sans cela, chaque execution
-        # relancerait une serie de recherches pour un fournisseur qui n'a
-        # pas de SRN — un distributeur, par exemple.
+        # The failure is cached as well: without that, every run would
+        # start a fresh series of searches for a supplier that has no
+        # SRN, a distributor for instance.
         fichier.write_text("[]", encoding="utf-8")
         return []
 
@@ -250,10 +249,11 @@ def catalogue_fabricant(fournisseur: str, indices: list[str] | None = None,
 
 
 def indexer(dispositifs: list[dict]) -> dict:
-    """Index des dispositifs par reference et par nom commercial.
+    """Index of the devices by reference and by trade name.
 
-    La reference EUDAMED porte parfois un suffixe ("REF12345 and suffix")
-    qui designe une famille de declinaisons : on indexe aussi la racine.
+    The EUDAMED reference sometimes carries a suffix ("REF12345 and
+    suffix") that designates a family of variants: we index the stem as
+    well.
     """
     par_reference: dict[str, dict] = {}
     par_nom: dict[str, list] = {}
