@@ -1,0 +1,41 @@
+# Document de relecture interne : ne doit jamais etre publie
+CAVIARDAGE_RAPPORT.md
+
+# Artefacts Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Journaux
+*.log
+
+# Donnees : ce depot ne contient que du code, jamais de donnees
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.tsv
+*.pdf
+*.json
+*.msg
+*.html
+*.docx
+*.doc
+*.pptx
+*.zip
+
+# Secrets, par principe
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Systeme
+.DS_Store
+Thumbs.db
+~$*
